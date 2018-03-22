@@ -2,10 +2,11 @@ import nltk
 from nltk.tag import StanfordNERTagger
 from nltk.tokenize import word_tokenize
 import os
-dir_path = os.path.dirname(os.path.realpath(__file__)) + '/'
 
 class StanfordNER:
-    def __init__(self, path = dir_path):
+    def __init__(self, path = None):
+        if path == None:
+            path = os.path.dirname(os.path.realpath(__file__)) + '/'
         self.ner = StanfordNERTagger(path + 'classifiers/english.all.3class.distsim.crf.ser.gz',
                                 path + 'stanford-ner.jar',
                                 encoding='utf-8')
