@@ -64,11 +64,11 @@ class MediaHaven:
             r = do_call()
         self._validate_response(r)
         return r.json()
-    
+        
     def search(self, q, startIndex = 0, nrOfResults = 25):
         """Execute a mediahaven search query
         """
-        return self.call('/resources/media', {"q": q, "startIndex": startIndex, "nrOfResults": nrOfResults})
+        return SearchResultIterator(self, q)
     
     def set_log_http_requests(self, enabled = False):
         """Toggle logging of http requests
@@ -82,4 +82,53 @@ class MediaHaven:
         requests_log.setLevel(logLevel)
         requests_log.propagate = enabled
 
+
+class SearchResultIterator:
+    def __init__(self, mh, q):
+        self.buffer_size = 25
+        self.mh = mh
+        self.q = q
+        self.length = None
+        self.buffer = []
+        self.i = 0
+        self.bufferIdx = 0
+    
+    def __iter__(self):
+         return self
+        
+    def fetch_next(self):
+        results = self.mh.call('/resources/media', {"q": self.q, "startIndex": self.i, "nrOfResults": self.buffer_size})
+        #if self.length == None:
+        self.length = results['totalNrOfResults']
+        self.buffer = results['mediaDataList']
+        
+    def __len__(self):
+        if self.length == None:
+            self.fetch_next()
+        return self.length
+        
+    def __next__(self):
+        if self.length == None:
+            self.fetch_next()
+        
+        if self.i >= self.length:
+            raise StopIteration()
+            
+        self.i += 1
+        self.bufferIdx += 1
+        
+        if (self.bufferIdx >= len(self.buffer)):
+            self.bufferIdx = 0
+            self.fetch_next()
+        
+        return self.buffer[self.bufferIdx]
+    
+    def set_buffer_size(self, buffer_size):
+        self.buffer_size = buffer_size
+    
+    def set_length(self, length):
+        """For testing/debugging purposes
+        """
+        self.length = length
+        
 
