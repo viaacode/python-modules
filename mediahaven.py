@@ -1,6 +1,6 @@
 # Usage:
 # mm = MediaHaven([config])
-# By default it will read config.json from the current working directory and
+# By default it will read config.ini from the current working directory and
 # use that config.
 # You can also use a dict with keys:
 #    - user
@@ -12,9 +12,11 @@
 
 
 import requests as req
-import pandas as pd
 import logging
 import http.client as http_client
+import configparser
+
+
 
 class MediaHavenException(Exception):
     pass
@@ -22,12 +24,10 @@ class MediaHavenException(Exception):
 class MediaHaven:
     def __init__(self, config = None):
         if config == None:
-            config = 'config.json'
+            config = 'config.ini'
         if type(config) == str:
-            try:
-               config = pd.read_json(config)
-            except ValueError:
-               config = pd.read_json(config, typ='series')
+            config = configparser.ConfigParser()
+            config.read('config.ini')
         try:
             config = config['mediahaven']
         except Exception:
