@@ -68,7 +68,7 @@ class MediaHaven:
     def search(self, q, startIndex = 0, nrOfResults = 25):
         """Execute a mediahaven search query
         """
-        return SearchResultIterator(self, q)
+        return SearchResultIterator(self, q, startIndex, nrOfResults)
     
     def set_log_http_requests(self, enabled = False):
         """Toggle logging of http requests
@@ -84,13 +84,13 @@ class MediaHaven:
 
 
 class SearchResultIterator:
-    def __init__(self, mh, q):
-        self.buffer_size = 25
+    def __init__(self, mh, q, start_index = 0, buffer_size = 25):
+        self.buffer_size = buffer_size
         self.mh = mh
         self.q = q
         self.length = None
         self.buffer = []
-        self.i = 0
+        self.i = start_index
         self.bufferIdx = 0
     
     def __iter__(self):
