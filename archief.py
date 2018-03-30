@@ -12,5 +12,5 @@ class Archief:
          location = res.headers['location']
          url = location + '?' + urllib.parse.urlencode({"search": search_string})
       except Exception as e:
-         print(e)
+         pass
       return url
