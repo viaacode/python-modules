@@ -27,6 +27,10 @@ class Namenlijst:
         self.__config = config
         self.__jsonrpc = Server(config['api_host'])
 
+    # def findPersonAdvanced(query = None):
+    # todo
+
+
     def refresh_token(self):
         self.__token = self.__jsonrpc.authenticate(account = self.__config['api_user'], password = self.__config['api_pass'])
         return self.__token
@@ -89,7 +93,7 @@ class ResultIterator:
         self.length = None
         self.buffer = []
         self.i = kwargs['skip'] if 'skip' in kwargs else 0
-        self.bufferIdx = 0
+        self.buffer_idx = 0
 
     def __iter__(self):
          return self
@@ -114,18 +118,22 @@ class ResultIterator:
             raise StopIteration()
 
         self.i += 1
-        self.bufferIdx += 1
+        self.buffer_idx += 1
 
-        if (self.bufferIdx >= len(self.buffer)):
-            self.bufferIdx = 0
+        if (self.buffer_idx >= len(self.buffer) and self.i < self.length):
+            self.buffer_idx = 0
             self.fetch_next()
 
-        return self.buffer[self.bufferIdx]
+        return self.buffer[self.buffer_idx - 1]
 
     def set_buffer_size(self, buffer_size):
         self.buffer_size = buffer_size
 
-    def set_length(self, length):
-        """For testing/debugging purposes
-        """
-        self.length = length
+#class AdvancedResultIterator(ResultIterator):
+    # TODO
+#    def fetch_next(self):
+#        self.kwargs['limit'] = self.buffer_size
+#        self.kwargs['skip'] = self.i
+#        results = self.method(self.kwargs)
+#        self.length = results['total']
+#        self.buffer = results['data']
