@@ -13,6 +13,9 @@ class Alto:
     def _yield_types(self, type_name):
         return self.iterfind(type_name)
 
+    def textblocks(self):
+        return (AltoTextBlock(block, self.xmlns) for block in self._yield_types('TextBlock'))
+
     def words(self):
         fields = {
             'text': 'CONTENT',
@@ -49,16 +52,29 @@ class AltoRoot(Alto):
     def pages(self):
         return (AltoPage(page, self.xmlns) for page in self._yield_types('Page'))
 
-class AltoPage(Alto):
+class AltoElement(Alto):
     def __init__(self, xml, xmlns):
         super().__init__(xml, xmlns)
         _ = xml.attrib
-        self.accuracy = float(_['ACCURACY'])
         self.width = int(_['WIDTH'])
         self.height = int(_['HEIGHT'])
         self.id = _['ID']
-        self.image_number = int(_['PHYSICAL_IMG_NR'])
         self.dimensions = (self.width, self.height)
+
+class AltoPage(AltoElement):
+    def __init__(self, xml, xmlns):
+        super().__init__(xml, xmlns)
+        _ = xml.attrib
+        self.accuracy = float(_['ACCURACY']) if 'ACCURACY' in _ else None
+        self.printed_image_number = _['PRINTED_IMG_NR']
+        self.physical_image_number = _['PHYSICAL_IMG_NR']
+
+class AltoTextBlock(AltoElement):
+    def __init__(self, xml, xmlns):
+        super().__init__(xml, xmlns)
+        _ = xml.attrib
+        self.x = int(_['HPOS'])
+        self.y = int(_['VPOS'])
 
 class AltoWord(dict):
     pass

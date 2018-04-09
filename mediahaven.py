@@ -146,6 +146,7 @@ class PreviewImage:
         self.meta = None
         self.image = None
         self.closed = True
+        self.cropped_coords = None
         #self.__enter__()
 
     def __enter__(self):
@@ -191,28 +192,40 @@ class PreviewImage:
         im = self.image
         p = pages[0]
         (w, h) = p.dimensions
-        rects = []
-        for tocheck in words:
-            if search_kind[0] == 'i':
-                tocheck = tocheck.lower()
-            rects.extend(getattr(SearchKinds, search_kind)(alto.words(), tocheck))
-
-        scale_x = im.size[0] / w
-        scale_y = im.size[1] / h
-        padding = 2
+        crop = [w, h, 0, 0]
         canvas = ImageDraw.Draw(im)
-        for rect in rects:
-            coords = [
-                (
-                    int(rect['x']) * scale_x - padding,
-                    int(rect['y']) * scale_y - padding
-                ),
-                (
-                    (int(rect['x']) + int(rect['w'])) * scale_x + padding,
-                    (int(rect['y']) + int(rect['h'])) * scale_y + padding
-                )
-            ]
-            canvas.rectangle(coords, outline=color)
+        for textblock in p.textblocks():
+            rects = []
+            for tocheck in words:
+                if search_kind[0] == 'i':
+                    tocheck = tocheck.lower()
+                rects.extend(getattr(SearchKinds, search_kind)(textblock.words(), tocheck))
+
+            scale_x = im.size[0] / w
+            scale_y = im.size[1] / h
+            padding = 2
+            for rect in rects:
+                x0 = int(rect['x']) * scale_x - padding
+                y0 = int(rect['y']) * scale_y - padding
+                x1 = (int(rect['x']) + int(rect['w'])) * scale_x + padding
+                y1 = (int(rect['y']) + int(rect['h'])) * scale_y + padding
+                canvas.rectangle([(x0, y0), (x1, y1)], outline=color)
+
+            if len(rects):
+                crop[0] = min(textblock.x, crop[0])
+                crop[1] = min(textblock.y, crop[1])
+                crop[2] = max(textblock.x + textblock.width, crop[2])
+                crop[3] = max(textblock.y + textblock.height, crop[3])
+        self.cropped_coords = (crop[0] * scale_x, crop[1] * scale_y, crop[2] * scale_x, crop[3] * scale_y)
+
+    def crop(self, coords = None):
+        if coords is None:
+            coords = self.cropped_coords
+
+        if coords is None:
+            return self.image
+        
+        return self.image.crop(coords)
 
 
 class Export:
