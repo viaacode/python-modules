@@ -7,39 +7,57 @@
 #    - pass
 #    - host (eg. archief-qas.viaa.be)
 #    - port (eg. 443)
-#    - basePath (eg. /mediahaven-rest-api)
+#    - base_path (eg. /mediahaven-rest-api)
 #    - protocol (eg. 'https')
 
 
 import requests as req
 import logging
 import http.client as http_client
-import configparser
 import urllib
 import time
 from . import alto
+from .config import Config
+from .decorators import cache, memoize, classcache, DictCacher
 from PIL import Image, ImageDraw
 from io import BytesIO
-
+logger = logging.getLogger(__name__)
 
 class MediaHavenException(Exception):
     pass
 
+
 class MediaHaven:
     def __init__(self, config = None):
-        if config == None:
-            config = 'config.ini'
-        if type(config) == str:
-            config = configparser.ConfigParser()
-            config.read('config.ini')
-        try:
-            config = config['mediahaven']
-        except Exception:
-            pass
-        self.config = config
-        self.URL = config['protocol'] + '://' + config['host'] + ':' + str(config['port']) + config['basePath']
+        self.config = Config(config, 'mediahaven')
+        _ = self.config
+        self.URL = '%s://%s:%s%s' % (_['protocol'], _['host'], str(_['port']), _['base_path'])
         self.token = None
         self.tokenText = None
+
+        self.__cache = DictCacher()
+        if 'cache' in _:
+            self.__cache = _['cache']
+
+        if 'debug' in self.config and self.config['debug']:
+            logging.basicConfig()
+            logger.setLevel(logging.DEBUG)
+            logger.propagate = True
+            logger.debug('Debugging enabled through configuration')
+
+
+    def get_cache(self):
+        return self.__cache
+
+    def set_cache(self, cache):
+        self.__cache = cache
+        return self
+
+    def oai(self):
+        from sickle import Sickle
+        _ = self.config
+        url = '%s://%s:%s%s' % (_['protocol'], _['host'], str(_['port']), _['oai_path'])
+        return Sickle(url, auth=(_['user'], _['pass']))
 
     def refresh_token(self):
         """Fetch a new token based on the user/pass combination of config
@@ -52,16 +70,18 @@ class MediaHaven:
 
     def _validate_response(self, r, status_code = 200):
         if r.status_code < 200 or r.status_code >= 300:
-            raise MediaHavenException("Wrong status code " + str(r.status_code) + ": " + r.text)
+            logger.warn("Wrong status code %d: %s " % (r.status_code, r.text))
+            raise MediaHavenException("Wrong status code %d: %s " % (r.status_code, r.text))
 
-    def call_absolute(self, url, params = {}, method = None, raw_response = False):
+    def call_absolute(self, url, params = None, method = None, raw_response = False):
         if method == None:
             method = 'get'
 
         def do_call():
             if not self.tokenText:
                 self.refresh_token()
-            return getattr(req, method)(url, headers={'Authorization': self.tokenText}, params = params)
+            res = getattr(req, method)(url, headers={'Authorization': self.tokenText}, params = params)
+            return res
 
         r = do_call()
         if r.status_code < 200 or r.status_code >= 300:
@@ -76,6 +96,19 @@ class MediaHaven:
         """Execute a call to MediaHaven server
         """
         return self.call_absolute(self.URL + url, *args, **kwargs)
+
+    def one(self, q):
+        """Execute a mediahaven search query, return first result (or None)
+        """
+        params = {
+            "q": q,
+            "startIndex": 0,
+            "nrOfResults": 1
+        }
+        res = self.call('/resources/media/', params)
+        if not res:
+            return None
+        return res['mediaDataList'][0]
 
     def search(self, q, startIndex = 0, nrOfResults = 25):
         """Execute a mediahaven search query
@@ -104,29 +137,47 @@ class MediaHaven:
             return MediaDataListIterator(self, url = url)
         return self.call(url, *args, **kwargs)
 
-    def export(self, mediaObjectId):
+    def export(self, mediaObjectId, reason = None):
         """Export a file
         """
-        res = self.media(mediaObjectId, 'export', method='post', raw_response = True)
+        params = { "exportReason": reason } if reason else None
+        res = self.media(mediaObjectId, 'export', method='post', raw_response = True, params = params)
         return Export(self, res.headers['Location'], res.json())
 
-    def get_alto(self, pid, timeout = 1):
+    @classcache
+    def get_alto(self, pid, max_timeout = None):
+        logger.debug('getting alto for %s ' % pid)
         res = self.search('+(originalFileName:%s_alto.xml)' % pid)
+
         if len(res) == 0:
+            logger.warning('Expected 1 result for %s, got none' % pid)
             return None
+
         if len(res) > 1:
-            raise "Expected only one result"
+            logger.warning('Expected 1 result for %s, gotten %d' % (pid, len(res)))
+            raise MediaHavenException("Expected only one result")
 
         res = next(res)
         mediaObjectId = res['mediaObjectId']
         export = self.export(mediaObjectId)
-        timeout *= 10
-        while timeout >= 0 and not export.is_ready():
-            timeout += 1
+        if max_timeout is None:
+            max_timeout = 5
+        repeats = max_timeout * 10
+        logger.debug("Get export for %s" % mediaObjectId)
+        while (repeats > 0) and (not export.is_ready()):
+            repeats -= 1
             time.sleep(0.1)
+
+        if not export.is_ready():
+            msg = "Timeout of %ds reached without export being ready for '%s'" % (max_timeout, export.location)
+            logger.warning(msg)
+            raise MediaHavenException(msg)
+
         files = export.get_files()
-        if files == None or len(files) != 1:
-            raise "Couldn't get files..."
+        if files is None or len(files) != 1:
+            logger.warning("Couldn't get files. %s" % ('None' if files is None else ('Length: %d' % len(files))))
+            raise MediaHavenException("Couldn't get files...")
+
         return alto.AltoRoot(req.get(files[0]).content)
 
     def fragments(self, mediaObjectId):
@@ -147,6 +198,7 @@ class PreviewImage:
         self.image = None
         self.closed = True
         self.cropped_coords = None
+        self.scroll_coords = (0, 0)
         #self.__enter__()
 
     def __enter__(self):
@@ -160,72 +212,191 @@ class PreviewImage:
             raise IOError("File already open")
 
         items = self.mh.search('+(externalId:%s)' % self.pid)
+        self.closed = False
         if len(items) == 0:
             return None
         if len(items) > 1:
-            raise "Expected only 1 result"
+            raise MediaHavenException("Expected only 1 result")
         self.meta = next(items)
         self.image = Image.open(BytesIO(req.get(self.meta['previewImagePath']).content))
-        self.closed = False
         return self
 
     def close(self):
         if self.closed:
             raise IOError("Cannot close a not-open file")
-        self.image.close()
+        if self.image:
+            self.image.close()
         self.closed = True
         return self
 
-    def highlight_words(self, words, search_kind = None, color = (255, 255, 0)):
+    def highlight_confidence(self, im = None, max_timeout=None):
+        if self.closed:
+            raise IOError("Cannot work on a closed file")
+
+        alto = self.get_alto()
+        pages = list(alto.pages())
+        if len(pages) != 1:
+            raise MediaHavenException("Expected only 1 page, got %d" % len(pages))
+
+        if im is None:
+            im = self.image.copy()
+
+        p = pages[0]
+        (w, h) = p.dimensions
+        crop = [w, h, 0, 0]
+        min_x = None
+        min_y = None
+        scale_x = im.size[0] / w
+        scale_y = im.size[1] / h
+        padding = 0
+        canvas = ImageDraw.Draw(im)
+        logger.debug('img: %dx%d, page: %dx%d, scale: %1.2fx%1.2f' % (w, h, im.size[0], im.size[1], scale_x, scale_y))
+
+        for rect in p.words():
+            if rect.x is None:
+                logger.warning("Rect with missing x: %s" % rect.__dict__)
+                continue
+            x0 = int(rect.x) * scale_x - padding
+            y0 = int(rect.y) * scale_y - padding
+            x1 = (int(rect.x) + int(rect.w)) * scale_x + padding
+            y1 = (int(rect.y) + int(rect.h)) * scale_y + padding
+            if min_x is None or x0 < min_x:
+                min_x = x0
+            if min_y is None or y0 < min_y:
+                min_y = y0
+            color = 0 if rect.confidence is None else int((1-float(rect.confidence))*255)
+            canvas.rectangle([(x0, y0), (x1, y1)], outline=(color, 255 - color, 0))
+        return im
+
+    def get_alto(self):
+        return self.mh.get_alto(self.pid)
+
+    def get_words(self, words, search_kind = None):
+        def format_coords(_):
+            x = int(_.x)
+            y = int(_.y)
+            w = int(_.w)
+            h = int(_.h)
+            return [(x, y), (x+w, y+h)]
+
+        def calc_extents(*args, func = None):
+            if func is None:
+                func = (min, max)
+            return [
+                (
+                    func[0]([a[0][0] for a in args]),
+                    func[0]([a[0][1] for a in args])
+                ),
+                (
+                    func[1]([a[1][0] for a in args]),
+                    func[1]([a[1][1] for a in args])
+                )
+            ]
+        if type(words) is str:
+            words = [words]
+        if search_kind is None:
+            search_kind = 'icontains'
+        alto = self.get_alto()
+        page = list(alto.pages())
+        if len(page) != 1:
+            raise MediaHavenException("Expected only 1 page, got %d" % len(page))
+        page = page[0]
+        (w, h) = page.dimensions
+        textblocks_extent = None
+        words_extent = None
+
+        results = []
+        coords = []
+        for textblock in page.textblocks():
+            textblock_extent = format_coords(textblock)
+            rects = []
+            for tocheck in words:
+                rects.extend(SearchKinds.run(search_kind, textblock.words(), tocheck))
+
+            for rect in rects:
+                coords.append({
+                    "extent": format_coords(rect),
+                    "word": rect,
+                    "extent_textblock": textblock_extent
+                })
+                words_extent = calc_extents(words_extent, word_extent)
+
+            if len(rects):
+                textblocks_extent = calc_extents(textblock_extent, textblocks_extent)
+                results.extend(coords)
+        self.scroll_coords = (min_x, min_y)
+        return {
+            "extent_page": format_coords(0, 0, w, h),
+            "results": results,
+            "extent_words": words_extent,
+            "extent_textblocks": textblocks_extent
+        }
+
+
+    def highlight_words(self, words, search_kind = None, im = None, max_timeout=None, crop = True):
+        color = (255, 255, 0)
         if self.closed:
             raise IOError("Cannot work on a closed file")
         if search_kind is None:
             search_kind = 'icontains'
         if type(words) is str:
             words = [words]
-        alto = self.mh.get_alto(self.pid)
-        self.alto = alto
+        alto = self.get_alto()
         pages = list(alto.pages())
         if len(pages) != 1:
-            raise "Expected only 1 page, got %d" % len(pages)
-
-        im = self.image
+            raise MediaHavenException("Expected only 1 page, got %d" % len(pages))
+        if im is None:
+            im = self.image.copy()
         p = pages[0]
         (w, h) = p.dimensions
         crop = [w, h, 0, 0]
+        min_x = None
+        min_y = None
         canvas = ImageDraw.Draw(im)
         for textblock in p.textblocks():
             rects = []
             for tocheck in words:
-                if search_kind[0] == 'i':
-                    tocheck = tocheck.lower()
-                rects.extend(getattr(SearchKinds, search_kind)(textblock.words(), tocheck))
+                rects.extend(SearchKinds.run(search_kind, textblock.words(), tocheck))
 
             scale_x = im.size[0] / w
             scale_y = im.size[1] / h
             padding = 2
             for rect in rects:
-                x0 = int(rect['x']) * scale_x - padding
-                y0 = int(rect['y']) * scale_y - padding
-                x1 = (int(rect['x']) + int(rect['w'])) * scale_x + padding
-                y1 = (int(rect['y']) + int(rect['h'])) * scale_y + padding
+                x0 = int(rect.x) * scale_x - padding
+                y0 = int(rect.y) * scale_y - padding
+                x1 = (int(rect.x) + int(rect.w)) * scale_x + padding
+                y1 = (int(rect.y) + int(rect.h)) * scale_y + padding
+                if min_x is None or x0 < min_x:
+                    min_x = x0
+                if min_y is None or y0 < min_y:
+                    min_y = y0
                 canvas.rectangle([(x0, y0), (x1, y1)], outline=color)
 
             if len(rects):
                 crop[0] = min(textblock.x, crop[0])
                 crop[1] = min(textblock.y, crop[1])
-                crop[2] = max(textblock.x + textblock.width, crop[2])
-                crop[3] = max(textblock.y + textblock.height, crop[3])
+                crop[2] = max(textblock.x + textblock.w, crop[2])
+                crop[3] = max(textblock.y + textblock.h, crop[3])
         self.cropped_coords = (crop[0] * scale_x, crop[1] * scale_y, crop[2] * scale_x, crop[3] * scale_y)
 
-    def crop(self, coords = None):
+        if crop:
+            self.crop(im, self.cropped_coords)
+
+        canvas.rectangle([(self.cropped_coords[0] - padding, self.cropped_coords[1] - padding), (self.cropped_coords[2] + padding, self.cropped_coords[3] + padding)], outline=(0, 0, 255))
+        self.scroll_coords = (min_x, min_y)
+        return im
+
+    def crop(self, im = None, coords = None):
         if coords is None:
             coords = self.cropped_coords
 
+        if im is None:
+            im = self.image.copy()
+
         if coords is None:
-            return self.image
-        
-        return self.image.crop(coords)
+            return im
+
+        return im.crop(coords)
 
 
 class Export:
@@ -243,6 +414,7 @@ class Export:
             return True
         res = self._do_req()
         self.files = [status['downloadUrl'] for status in res if status['status'] == 'completed']
+        logger.debug("Export: is_ready? wanted %d vs. %d gotten" % (len(self.files), len(self.result)))
         return len(self.files) == len(self.result)
 
     def get_files(self):
@@ -330,11 +502,15 @@ class SearchResultIterator(MediaDataListIterator):
         super().__init__(mh, params = { "q": q }, start_index = start_index, buffer_size = buffer_size)
 
 class SearchKinds:
+    def run(kind, words, tocheck):
+        if tocheck is None:
+            tocheck = ''
+        return getattr(SearchKinds, kind)([word for word in words if type(word.text) is str], tocheck)
     def contains(words, tocheck):
-        return [word for word in words if tocheck in word['text']]
+        return [word for word in words if tocheck in word.text]
     def icontains(words, tocheck):
-        return [word for word in words if tocheck in word['text'].lower()]
+        return [word for word in words if tocheck.lower() in word.text.lower()]
     def literal(words, tocheck):
-        return [word for word in words if tocheck == word['text']]
+        return [word for word in words if tocheck == word.text]
     def iliteral(words, tocheck):
-        return [word for word in words if tocheck == word['text'].lower()]
+        return [word for word in words if tocheck.lower() == word.text.lower()]

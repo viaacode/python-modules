@@ -1,6 +1,6 @@
 import requests
 from jsonrpc_requests import Server, ProtocolError
-from configparser import ConfigParser
+from .config import Config
 
 import logging
 import http.client as http_client
@@ -11,21 +11,11 @@ class Namenlijst:
     __token   = None
 
     def __init__(self, config = None, log_http_requests = None):
-        if config == None:
-            config = 'config.ini'
-        if type(config) == str:
-            config = ConfigParser()
-            config.read('config.ini')
-        try:
-            config = config['namenlijst']
-        except Exception:
-            pass
-
+        self.__config = Config(config, 'namenlijst')
         if type(log_http_requests) == bool:
             self.set_log_http_requests(log_http_requests)
 
-        self.__config = config
-        self.__jsonrpc = Server(config['api_host'])
+        self.__jsonrpc = Server(self.__config['api_host'])
 
     # def findPersonAdvanced(query = None):
     # todo
