@@ -11,6 +11,9 @@ class Alto:
         q = './/{%s}%s' % (self.xmlns, q)
         return self.xml.iterfind(q, *args, **kwargs)
 
+    def oa(self, q, k, *args, **kwargs):
+        return int(next(self.iterfind(q, *args, **kwargs)).attrib[k])
+
     def _yield_types(self, type_name):
         return self.iterfind(type_name)
 
@@ -84,8 +87,6 @@ class AltoWord(object):
             v = None
             if attr in xml.attrib:
                 v = xml.attrib[attr]
-            if v is None:
-                raise Exception("Couldnt find value for '%s' in %s" % (attr, xml.attrib))
             if len(k) == 1:
                 v = int(v)
             setattr(self, k, v)

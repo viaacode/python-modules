@@ -197,8 +197,6 @@ class PreviewImage:
         self.meta = None
         self.image = None
         self.closed = True
-        self.cropped_coords = None
-        self.scroll_coords = (0, 0)
         #self.__enter__()
 
     def __enter__(self):
@@ -243,14 +241,14 @@ class PreviewImage:
 
         p = pages[0]
         (w, h) = p.dimensions
-        crop = [w, h, 0, 0]
+
         min_x = None
         min_y = None
         scale_x = im.size[0] / w
         scale_y = im.size[1] / h
         padding = 0
         canvas = ImageDraw.Draw(im)
-        logger.debug('img: %dx%d, page: %dx%d, scale: %1.2fx%1.2f' % (w, h, im.size[0], im.size[1], scale_x, scale_y))
+        logger.debug('page: %dx%d, image: %dx%d, scale: %1.2fx%1.2f' % (w, h, im.size[0], im.size[1], scale_x, scale_y))
 
         for rect in p.words():
             if rect.x is None:
@@ -271,27 +269,8 @@ class PreviewImage:
     def get_alto(self):
         return self.mh.get_alto(self.pid)
 
+    #@memoize
     def get_words(self, words, search_kind = None):
-        def format_coords(_):
-            x = int(_.x)
-            y = int(_.y)
-            w = int(_.w)
-            h = int(_.h)
-            return [(x, y), (x+w, y+h)]
-
-        def calc_extents(*args, func = None):
-            if func is None:
-                func = (min, max)
-            return [
-                (
-                    func[0]([a[0][0] for a in args]),
-                    func[0]([a[0][1] for a in args])
-                ),
-                (
-                    func[1]([a[1][0] for a in args]),
-                    func[1]([a[1][1] for a in args])
-                )
-            ]
         if type(words) is str:
             words = [words]
         if search_kind is None:
@@ -301,102 +280,93 @@ class PreviewImage:
         if len(page) != 1:
             raise MediaHavenException("Expected only 1 page, got %d" % len(page))
         page = page[0]
-        (w, h) = page.dimensions
         textblocks_extent = None
         words_extent = None
 
         results = []
         coords = []
+        textblocks = []
         for textblock in page.textblocks():
-            textblock_extent = format_coords(textblock)
+            textblock_extent = Extent.from_object(textblock)
+            textblocks.append(textblock_extent)
             rects = []
             for tocheck in words:
                 rects.extend(SearchKinds.run(search_kind, textblock.words(), tocheck))
 
             for rect in rects:
+                word_extent = Extent.from_object(rect)
                 coords.append({
-                    "extent": format_coords(rect),
+                    "extent": word_extent,
                     "word": rect,
                     "extent_textblock": textblock_extent
                 })
-                words_extent = calc_extents(words_extent, word_extent)
+                words_extent = Extent.extend(word_extent, words_extent)
 
             if len(rects):
-                textblocks_extent = calc_extents(textblock_extent, textblocks_extent)
+                textblocks_extent = Extent.extend(textblock_extent, textblocks_extent)
                 results.extend(coords)
-        self.scroll_coords = (min_x, min_y)
+
+        pagedim = page.dimensions
+
+
+        # printspace = next(page.iterfind('PrintSpace')).attrib
+        # pagedim = (int(printspace['WIDTH']), int(printspace['HEIGHT']))
+
+        # pagedim[0] += int(page.one_attrib('TopMargin')['HPOS'])
+        # pagedim[1] += int(page.one_attrib('LeftMargin')['VPOS'])
+
         return {
-            "extent_page": format_coords(0, 0, w, h),
-            "results": results,
+            "page_dimensions": pagedim,
+            "words": results,
             "extent_words": words_extent,
-            "extent_textblocks": textblocks_extent
+            "extent_textblocks": textblocks_extent,
+            "textblocks": textblocks,
+            "ext2": Extent(page.oa('LeftMargin', 'HPOS'), page.oa('TopMargin', 'VPOS'), page.oa('RightMargin', 'HPOS'), page.oa('BottomMargin', 'VPOS'))
+            # "words_topleft": (min_x, min_y),
         }
 
 
-    def highlight_words(self, words, search_kind = None, im = None, max_timeout=None, crop = True):
+    def highlight_words(self, words, search_kind = None, im = None, crop = True, highlight_textblocks = True):
         color = (255, 255, 0)
-        if self.closed:
-            raise IOError("Cannot work on a closed file")
-        if search_kind is None:
-            search_kind = 'icontains'
-        if type(words) is str:
-            words = [words]
-        alto = self.get_alto()
-        pages = list(alto.pages())
-        if len(pages) != 1:
-            raise MediaHavenException("Expected only 1 page, got %d" % len(pages))
         if im is None:
             im = self.image.copy()
-        p = pages[0]
-        (w, h) = p.dimensions
-        crop = [w, h, 0, 0]
-        min_x = None
-        min_y = None
         canvas = ImageDraw.Draw(im)
-        for textblock in p.textblocks():
-            rects = []
-            for tocheck in words:
-                rects.extend(SearchKinds.run(search_kind, textblock.words(), tocheck))
+        coords =  self.get_words(words, search_kind = search_kind)
+        padding = 2
 
-            scale_x = im.size[0] / w
-            scale_y = im.size[1] / h
-            padding = 2
-            for rect in rects:
-                x0 = int(rect.x) * scale_x - padding
-                y0 = int(rect.y) * scale_y - padding
-                x1 = (int(rect.x) + int(rect.w)) * scale_x + padding
-                y1 = (int(rect.y) + int(rect.h)) * scale_y + padding
-                if min_x is None or x0 < min_x:
-                    min_x = x0
-                if min_y is None or y0 < min_y:
-                    min_y = y0
-                canvas.rectangle([(x0, y0), (x1, y1)], outline=color)
+        (page_w, page_h) = coords['page_dimensions']
+        (w, h) = im.size
+        scale_x = w / page_w
+        scale_y = h / page_h
 
-            if len(rects):
-                crop[0] = min(textblock.x, crop[0])
-                crop[1] = min(textblock.y, crop[1])
-                crop[2] = max(textblock.x + textblock.w, crop[2])
-                crop[3] = max(textblock.y + textblock.h, crop[3])
-        self.cropped_coords = (crop[0] * scale_x, crop[1] * scale_y, crop[2] * scale_x, crop[3] * scale_y)
+        logger.debug('Scaling, page: %dx%d vs img %dx%d => %3.2fx%3.2f' % (page_w, page_h, w, h, scale_x, scale_y))
 
+        for word in coords['words']:
+            rect = word['extent'].scale(scale_x, scale_y)
+            canvas.rectangle(rect.as_coords(), outline=color)
+
+        if highlight_textblocks:
+            for textblock_extent in coords['textblocks']:
+                canvas.rectangle(textblock_extent.scale(scale_x, scale_y).as_coords(), outline=(0, 0, 255))
+
+
+        canvas.rectangle(coords['ext2'].scale(scale_x, scale_y).as_coords(), outline=(255, 0, 0))
         if crop:
-            self.crop(im, self.cropped_coords)
+            im = im.crop(coords['extent_textblocks'].scale(scale_x, scale_y).as_box())
+        else:
+            canvas.rectangle(coords['extent_textblocks'].scale(scale_x, scale_y).as_coords(), outline=(0, 0, 255))
 
-        canvas.rectangle([(self.cropped_coords[0] - padding, self.cropped_coords[1] - padding), (self.cropped_coords[2] + padding, self.cropped_coords[3] + padding)], outline=(0, 0, 255))
-        self.scroll_coords = (min_x, min_y)
+        pagepad = 30
+        # page_w = w
+        # page_h = h
+        page_w *= scale_x
+        page_h *= scale_y
+        page_w -= 2*pagepad
+        page_h -= 2*pagepad
+        pagecoords = [(pagepad, pagepad), (page_w, page_h)]
+
+        canvas.rectangle(pagecoords, outline=(0, 255, 0))
         return im
-
-    def crop(self, im = None, coords = None):
-        if coords is None:
-            coords = self.cropped_coords
-
-        if im is None:
-            im = self.image.copy()
-
-        if coords is None:
-            return im
-
-        return im.crop(coords)
 
 
 class Export:
@@ -414,7 +384,7 @@ class Export:
             return True
         res = self._do_req()
         self.files = [status['downloadUrl'] for status in res if status['status'] == 'completed']
-        logger.debug("Export: is_ready? wanted %d vs. %d gotten" % (len(self.files), len(self.result)))
+        logger.debug("Export: %d todo, done:\n%s" % (len(self.result), self.files))
         return len(self.files) == len(self.result)
 
     def get_files(self):
@@ -437,7 +407,6 @@ class Export:
                 raise MediaHavenException("Invalid status code %d" % res.status_code)
             data.append(res.content)
         return data
-
 
 
 class MediaDataListIterator:
@@ -514,3 +483,68 @@ class SearchKinds:
         return [word for word in words if tocheck == word.text]
     def iliteral(words, tocheck):
         return [word for word in words if tocheck.lower() == word.text.lower()]
+
+class Extent:
+    def __init__(self, x, y, w, h):
+        self.x = float(x)
+        self.y = float(y)
+        self.w = float(w)
+        self.h = float(h)
+
+    def as_coords(self):
+        return [(self.x, self.y), (self.x + self.w, self.y + self.h)]
+
+    def as_box(self):
+        return (self.x, self.y, self.x + self.w, self.y + self.h)
+
+    def __dict__(self):
+        return {
+            "x": self.x,
+            "y": self.y,
+            "w": self.w,
+            "h": self.h
+        }
+
+    def __str__(self):
+        return str(dict(self))
+
+    def scale(self, scale_x, scale_y, inplace = False):
+        if not inplace:
+            return Extent(self.x * scale_x, self.y * scale_y, self.w * scale_x, self.h * scale_y)
+        self.x *= scale_x
+        self.y *= scale_y
+        self.w *= scale_x
+        self.h *= scale_h
+        return self
+
+    @staticmethod
+    def from_object(_):
+        return Extent(_.x, _.y, _.w, _.h)
+
+    @staticmethod
+    def from_dict(_):
+        return Extent(_['x'], _['y'], _['w'], _['h'])
+
+    @staticmethod
+    def from_rect(x, y, w, h):
+        return Extent()
+
+    @staticmethod
+    def from_coords(_):
+        (x1, y1) = _[0]
+        (x2, y2) = _[1]
+        return Extent(x1, y1, x2 - x1, y2 - y1)
+
+    @staticmethod
+    def extend(*extents):
+        func = (min, max)
+        args = [Extent.from_object(ext).as_coords() for ext in extents if ext is not None]
+
+        (x1, y1, x2, y2) = (
+            func[0]([a[0][0] for a in args]),
+            func[0]([a[0][1] for a in args]),
+            func[1]([a[1][0] for a in args]),
+            func[1]([a[1][0] for a in args]),
+        )
+
+        return Extent.from_coords([(x1, y1), (x2, y2)])
