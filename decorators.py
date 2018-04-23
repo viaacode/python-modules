@@ -1,3 +1,7 @@
+import logging
+logging.basicConfig()
+_log = logging.getLogger(__name__)
+
 class DictCacher:
     '''Simple 'Local' cacher using a new dict... Usable to re-use same interface
        for other classes...
@@ -32,12 +36,11 @@ def memoize(f, cacher = None, timeout = None):
         x = get_cache_key(*args, **kwargs)
         if cacher.has_key(x):
             res = cacher.get(x)
-            print(__name__ + ': get: ' + str(x))
+            _log('%s: get: %s' % (memoize.__name__, f.__name__, str(x)))
         else:
             res = f(*args, **kwargs)
-            print(__name__ + ': set: ' + str(x))
+            _log('%s: set: %s' % (memoize.__name__, f.__name__, str(x)))
             cacher.set(x, res, timeout)
-        print(res)
         return res
 
     return _cacher
@@ -67,10 +70,19 @@ def classcache(f):
         x = get_cache_key(*args[1:], **kwargs)
         if cacher.has_key(x):
             res = cacher.get(x)
+            _log('%s(%s): get: %s' % (classcache.__name__, f.__name__, str(x)))
         else:
             res = f(*args, **kwargs)
-            print(__name__ + ': set: ' + str(x))
+            _log('%s(%s): set: %s' % (classcache.__name__, f.__name__, str(x)))
             cacher.set(x, res)
         return res
 
     return _cacher
+
+
+def logger(f):
+    global _log
+    _log.setLevel(logging.DEBUG)
+    _log = _log.debug
+    _log('CREATE %s' % f)
+    return f

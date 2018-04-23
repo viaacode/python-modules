@@ -18,7 +18,7 @@ import urllib
 import time
 from . import alto
 from .config import Config
-from .decorators import cache, memoize, classcache, DictCacher
+from .decorators import cache, memoize, classcache, logger as logdecorator, DictCacher
 from PIL import Image, ImageDraw
 from io import BytesIO
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ class MediaHaven:
         if 'cache' in _:
             self.__cache = _['cache']
 
-        if 'debug' in self.config and self.config['debug']:
+        if 'debug' in self.config and self.config['debug'] and self.config['debug'] not in ['no', 'false', 'off', '0']:
             logging.basicConfig()
             logger.setLevel(logging.DEBUG)
             logger.propagate = True
@@ -145,6 +145,7 @@ class MediaHaven:
         return Export(self, res.headers['Location'], res.json())
 
     @classcache
+    @logdecorator
     def get_alto(self, pid, max_timeout = None):
         logger.debug('getting alto for %s ' % pid)
         res = self.search('+(originalFileName:%s_alto.xml)' % pid)
@@ -384,7 +385,6 @@ class Export:
             return True
         res = self._do_req()
         self.files = [status['downloadUrl'] for status in res if status['status'] == 'completed']
-        logger.debug("Export: %d todo, done:\n%s" % (len(self.result), self.files))
         return len(self.files) == len(self.result)
 
     def get_files(self):

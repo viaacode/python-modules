@@ -4,23 +4,24 @@ from nltk.tokenize import word_tokenize
 import os
 
 class StanfordNER:
-    def __init__(self, path = None):
+    def __init__(self, path = None, buffer_size = None):
         if path == None:
             path = os.path.dirname(os.path.realpath(__file__)) + '/'
         self.ner = StanfordNERTagger(path + 'classifiers/english.all.3class.distsim.crf.ser.gz',
                                 path + 'stanford-ner.jar',
                                 encoding='utf-8')
         self.set = set(['LOCATION', 'ORGANIZATION', 'PERSON'])
+        self.buffer_size = 20 if buffer_size is None else buffer_size
 
     def tokenize(self, text):
         tokenized_text = word_tokenize(text)
         classified_text = self.ner.tag(tokenized_text)
         return classified_text
-    
-    def detect_entities(self, text, bufferSize = 10, types = None):
-        if types == None:
-            types = self.set
+
+    def tag_entities(self, text):
+        types = self.set
         tokens = self.tokenize(text)
+        buffer_size = self.buffer_size
         l = len(tokens)
         idx = 0
         detected = []
@@ -40,9 +41,9 @@ class StanfordNER:
                 'type': token[1],
                 'value': text
             }
-            if bufferSize:
-                val['context'] = ' '.join([t[0] for t in tokens[start_idx - bufferSize:idx + bufferSize]])
+            if buffer_size:
+                val['context'] = ' '.join([t[0] for t in tokens[start_idx - buffer_size:idx + buffer_size]])
             detected.append(val)
             idx += 1
-            
+
         return detected
