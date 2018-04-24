@@ -50,6 +50,7 @@ class AltoRoot(Alto):
 class AltoElement(Alto):
     def __init__(self, xml, xmlns):
         super().__init__(xml, xmlns)
+        self.xml = xml
         _ = xml.attrib
         self.w = int(_['WIDTH'])
         self.h = int(_['HEIGHT'])
@@ -57,6 +58,7 @@ class AltoElement(Alto):
         self.dimensions = (self.w, self.h)
 
 class AltoPage(AltoElement):
+
     def __init__(self, xml, xmlns):
         super().__init__(xml, xmlns)
         _ = xml.attrib
@@ -80,9 +82,11 @@ class AltoWord(object):
             'w': 'WIDTH',
             'h': 'HEIGHT',
             'color': 'CC',
-            'confidence': 'WC'
+            'confidence': 'WC',
+            'id': 'ID',
         }
 
+        self.xml = xml
         for k, attr in fields.items():
             v = None
             if attr in xml.attrib:
@@ -90,6 +94,10 @@ class AltoWord(object):
             if len(k) == 1:
                 v = int(v)
             setattr(self, k, v)
+        if 'SUBS_CONTENT' in xml.attrib:
+            self.full_text = xml.attrib['SUBS_CONTENT']
+        else:
+            self.full_text = self.text
 
 
 class AltoNull:

@@ -15,12 +15,18 @@ import requests as req
 import logging
 import http.client as http_client
 import urllib
+import datetime
 import time
+import json
 from . import alto
 from .config import Config
 from .decorators import cache, memoize, classcache, logger as logdecorator, DictCacher
 from PIL import Image, ImageDraw
 from io import BytesIO
+from xml.etree import ElementTree
+
+
+
 logger = logging.getLogger(__name__)
 
 class MediaHavenException(Exception):
@@ -316,7 +322,7 @@ class PreviewImage:
         # pagedim[0] += int(page.one_attrib('TopMargin')['HPOS'])
         # pagedim[1] += int(page.one_attrib('LeftMargin')['VPOS'])
 
-        return {
+        return Words({
             "page_dimensions": pagedim,
             "words": results,
             "extent_words": words_extent,
@@ -324,7 +330,7 @@ class PreviewImage:
             "textblocks": textblocks,
             "ext2": Extent(page.oa('LeftMargin', 'HPOS'), page.oa('TopMargin', 'VPOS'), page.oa('RightMargin', 'HPOS'), page.oa('BottomMargin', 'VPOS'))
             # "words_topleft": (min_x, min_y),
-        }
+        })
 
 
     def highlight_words(self, words, search_kind = None, im = None, crop = True, highlight_textblocks = True):
@@ -350,12 +356,11 @@ class PreviewImage:
             for textblock_extent in coords['textblocks']:
                 canvas.rectangle(textblock_extent.scale(scale_x, scale_y).as_coords(), outline=(0, 0, 255))
 
-
-        canvas.rectangle(coords['ext2'].scale(scale_x, scale_y).as_coords(), outline=(255, 0, 0))
-        if crop:
-            im = im.crop(coords['extent_textblocks'].scale(scale_x, scale_y).as_box())
-        else:
-            canvas.rectangle(coords['extent_textblocks'].scale(scale_x, scale_y).as_coords(), outline=(0, 0, 255))
+        if coords['extent_textblocks']:
+            if crop:
+                im = im.crop(coords['extent_textblocks'].scale(scale_x, scale_y).as_box())
+            else:
+                canvas.rectangle(coords['extent_textblocks'].scale(scale_x, scale_y).as_coords(), outline=(0, 0, 255))
 
         pagepad = 30
         # page_w = w
@@ -474,15 +479,15 @@ class SearchKinds:
     def run(kind, words, tocheck):
         if tocheck is None:
             tocheck = ''
-        return getattr(SearchKinds, kind)([word for word in words if type(word.text) is str], tocheck)
+        return getattr(SearchKinds, kind)([word for word in words if type(word.full_text) is str], tocheck)
     def contains(words, tocheck):
-        return [word for word in words if tocheck in word.text]
+        return [word for word in words if tocheck in word.full_text]
     def icontains(words, tocheck):
-        return [word for word in words if tocheck.lower() in word.text.lower()]
+        return [word for word in words if tocheck.lower() in word.full_text.lower()]
     def literal(words, tocheck):
-        return [word for word in words if tocheck == word.text]
+        return [word for word in words if tocheck == word.full_text]
     def iliteral(words, tocheck):
-        return [word for word in words if tocheck.lower() == word.text.lower()]
+        return [word for word in words if tocheck.lower() == word.full_text.lower()]
 
 class Extent:
     def __init__(self, x, y, w, h):
@@ -496,14 +501,6 @@ class Extent:
 
     def as_box(self):
         return (self.x, self.y, self.x + self.w, self.y + self.h)
-
-    def __dict__(self):
-        return {
-            "x": self.x,
-            "y": self.y,
-            "w": self.w,
-            "h": self.h
-        }
 
     def __str__(self):
         return str(dict(self))
@@ -527,7 +524,7 @@ class Extent:
 
     @staticmethod
     def from_rect(x, y, w, h):
-        return Extent()
+        return Extent(x, y, w, h)
 
     @staticmethod
     def from_coords(_):
@@ -544,7 +541,31 @@ class Extent:
             func[0]([a[0][0] for a in args]),
             func[0]([a[0][1] for a in args]),
             func[1]([a[1][0] for a in args]),
-            func[1]([a[1][0] for a in args]),
+            func[1]([a[1][1] for a in args]),
         )
 
         return Extent.from_coords([(x1, y1), (x2, y2)])
+
+class Words(dict):
+    def _serialize(obj):
+        """JSON serializer for objects not serializable by default json code"""
+        if isinstance(obj, datetime.date):
+            serial = obj.isoformat()
+            return serial
+
+        if isinstance(obj, datetime.time):
+            serial = obj.isoformat()
+            return serial
+
+        if isinstance(obj, ElementTree.Element):
+            serial = obj.attrib
+            return serial
+
+        #if isinstance(obj, Extent):
+    #        serial = obj.as_box;
+#            return serial
+
+        return obj.__dict__
+
+    def jsonserialize(obj):
+        return json.dumps(obj, default = Words._serialize)
