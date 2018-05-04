@@ -4,32 +4,29 @@ from nltk.tokenize import word_tokenize
 import os
 
 class StanfordNER:
-    def __init__(self, path = None, buffer_size = None):
+    def __init__(self, path = None):
         if path == None:
             path = os.path.dirname(os.path.realpath(__file__)) + '/'
         self.ner = StanfordNERTagger(path + 'classifiers/english.all.3class.distsim.crf.ser.gz',
                                 path + 'stanford-ner.jar',
                                 encoding='utf-8')
-        self.set = set(['LOCATION', 'ORGANIZATION', 'PERSON'])
-        self.buffer_size = 20 if buffer_size is None else buffer_size
+        self.set = set() # set(['LOCATION', 'ORGANIZATION', 'PERSON'])
 
-    def tokenize(self, text):
+    def tag(self, text, group = False):
         tokenized_text = word_tokenize(text)
         classified_text = self.ner.tag(tokenized_text)
+        if len(self.set):
+            classified_text = (r for r in classified_text if r[1] in self.set)
+        if group:
+            classified_text = self.group_tagged_entities(classified_text)
         return classified_text
 
-    def tag_entities(self, text):
-        types = self.set
-        tokens = self.tokenize(text)
-        buffer_size = self.buffer_size
+    def group_tagged_entities(self, tokens, buffer_size = 20):
         l = len(tokens)
         idx = 0
         detected = []
         while idx < l:
             token = tokens[idx]
-            if not token[1] in types:
-                idx += 1
-                continue
             text = token[0]
             start_idx = idx
             while idx + 1 < l:

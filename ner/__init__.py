@@ -3,6 +3,12 @@ import sys
 import importlib
 
 
+import unidecode
+import re
+def normalize(txt):
+    return re.sub(r"[^a-z]", '', unidecode.unidecode(txt).lower())
+
+
 class NERException(Exception):
     pass
 
