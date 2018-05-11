@@ -5,10 +5,11 @@ from .config import Config
 import logging
 import http.client as http_client
 
+
 class Namenlijst:
     __jsonrpc = None
-    __config  = None
-    __token   = None
+    __config = None
+    __token = None
 
     def __init__(self, config = None, log_http_requests = None):
         self.__config = Config(config, 'namenlijst')
@@ -20,12 +21,12 @@ class Namenlijst:
     # def findPersonAdvanced(query = None):
     # todo
 
-
     def refresh_token(self):
         self.__token = self.__jsonrpc.authenticate(account = self.__config['api_user'], password = self.__config['api_pass'])
         return self.__token
 
-    def set_log_http_requests(self, enabled = False):
+    @staticmethod
+    def set_log_http_requests(enabled=False):
         """Toggle logging of http requests
         """
         http_client.HTTPConnection.debuglevel = 1 if enabled else 0
@@ -38,9 +39,10 @@ class Namenlijst:
         requests_log.propagate = enabled
 
     def __getattr__(self, method_name):
-        if (self.__token == None):
+        if self.__token is None:
             self.refresh_token()
         return Method(self, self.__jsonrpc, self.__token, method_name)
+
 
 class Method:
     __iterable_methods = [
@@ -58,8 +60,7 @@ class Method:
         self.__method_name = method_name
 
     def __call__(self, *args, **kwargs):
-        result = None
-        kwargs = dict(kwargs, token = self.__token)
+        kwargs = dict(kwargs, token=self.__token)
 
         if self.__method_name in self.__iterable_methods:
             kwargs['total'] = 'true'
@@ -86,7 +87,7 @@ class ResultIterator:
         self.buffer_idx = 0
 
     def __iter__(self):
-         return self
+        return self
 
     def fetch_next(self):
         self.kwargs['limit'] = self.buffer_size
@@ -96,12 +97,12 @@ class ResultIterator:
         self.buffer = results['data']
 
     def __len__(self):
-        if self.length == None:
+        if self.length is None:
             self.fetch_next()
         return self.length
 
     def __next__(self):
-        if self.length == None:
+        if self.length is None:
             self.fetch_next()
 
         if self.i >= self.length:
@@ -110,7 +111,7 @@ class ResultIterator:
         self.i += 1
         self.buffer_idx += 1
 
-        if (self.buffer_idx >= len(self.buffer) and self.i < self.length):
+        if self.buffer_idx >= len(self.buffer) and self.i < self.length:
             self.buffer_idx = 0
             self.fetch_next()
 
