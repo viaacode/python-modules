@@ -1,4 +1,3 @@
-import requests
 from jsonrpc_requests import Server, ProtocolError
 from .config import Config
 
@@ -11,7 +10,7 @@ class Namenlijst:
     __config = None
     __token = None
 
-    def __init__(self, config = None, log_http_requests = None):
+    def __init__(self, config=None, log_http_requests=None):
         self.__config = Config(config, 'namenlijst')
         if type(log_http_requests) == bool:
             self.set_log_http_requests(log_http_requests)
@@ -22,7 +21,7 @@ class Namenlijst:
     # todo
 
     def refresh_token(self):
-        self.__token = self.__jsonrpc.authenticate(account = self.__config['api_user'], password = self.__config['api_pass'])
+        self.__token = self.__jsonrpc.authenticate(account=self.__config['api_user'], password=self.__config['api_pass'])
         return self.__token
 
     @staticmethod
@@ -54,9 +53,9 @@ class Method:
         if method_name.startswith("_"):
             raise AttributeError("invalid attribute '%s'" % method_name)
 
-        self.__obj         = obj
-        self.__token       = token
-        self.__jsonrpc     = jsonrpc
+        self.__obj = obj
+        self.__token = token
+        self.__jsonrpc = jsonrpc
         self.__method_name = method_name
 
     def __call__(self, *args, **kwargs):
