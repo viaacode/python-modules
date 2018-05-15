@@ -1,4 +1,4 @@
-import xml.etree.ElementTree as ET
+from xml.etree import ElementTree
 import re
 
 
@@ -23,9 +23,10 @@ class Alto:
     def words(self):
         return ( AltoWord(i) for i in self._yield_types('String') )
 
+
 class AltoRoot(Alto):
     def __init__(self, xml):
-        self.xml = ET.fromstring(xml)
+        self.xml = ElementTree.fromstring(xml)
 
         # validate namespace
         namespaces = [
@@ -47,6 +48,7 @@ class AltoRoot(Alto):
     def pages(self):
         return (AltoPage(page, self.xmlns) for page in self._yield_types('Page'))
 
+
 class AltoElement(Alto):
     def __init__(self, xml, xmlns):
         super().__init__(xml, xmlns)
@@ -57,6 +59,7 @@ class AltoElement(Alto):
         self.id = _['ID']
         self.dimensions = (self.w, self.h)
 
+
 class AltoPage(AltoElement):
 
     def __init__(self, xml, xmlns):
@@ -66,12 +69,14 @@ class AltoPage(AltoElement):
         self.printed_image_number = _['PRINTED_IMG_NR'] if 'PRINTED_IMG_NR' in _ else None
         self.physical_image_number = _['PHYSICAL_IMG_NR'] if 'PHYSICAL_IMG_NR' in _ else None
 
+
 class AltoTextBlock(AltoElement):
     def __init__(self, xml, xmlns):
         super().__init__(xml, xmlns)
         _ = xml.attrib
         self.x = int(_['HPOS'])
         self.y = int(_['VPOS'])
+
 
 class AltoWord(object):
     def __init__(self, xml):
@@ -103,7 +108,9 @@ class AltoWord(object):
 class AltoNull:
     def words(self):
         return ()
+
     def pages(self):
         return ()
+
     def textblocks(self):
         return ()

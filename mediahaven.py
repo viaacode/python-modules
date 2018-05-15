@@ -25,16 +25,33 @@ from PIL import Image, ImageDraw
 from io import BytesIO
 from xml.etree import ElementTree
 
-
-
 logger = logging.getLogger(__name__)
+
+# quick hack to always use proxy
+# class req:
+#     @staticmethod
+#     def get(*args, **kwargs):
+#         kwargs['proxies'] = {
+#           'http': 'proxy:80',
+#           'https': 'proxy:80'
+#         }
+#         return requests.get(*args, **kwargs)
+#
+#     @staticmethod
+#     def post(*args, **kwargs):
+#         kwargs['proxies'] = {
+#           'http': 'proxy:80',
+#           'https': 'proxy:80'
+#         }
+#         return requests.post(*args, **kwargs)
+
 
 class MediaHavenException(Exception):
     pass
 
 
 class MediaHaven:
-    def __init__(self, config = None):
+    def __init__(self, config=None):
         self.config = Config(config, 'mediahaven')
         _ = self.config
         self.URL = '%s://%s:%s%s' % (_['protocol'], _['host'], str(_['port']), _['base_path'])
@@ -50,7 +67,6 @@ class MediaHaven:
             logger.setLevel(logging.DEBUG)
             logger.propagate = True
             logger.debug('Debugging enabled through configuration')
-
 
     def get_cache(self):
         return self.__cache
@@ -74,13 +90,13 @@ class MediaHaven:
         self.token = r.json()
         self.tokenText = self.token['token_type'] + ' ' + self.token['access_token']
 
-    def _validate_response(self, r, status_code = 200):
+    def _validate_response(self, r):
         if r.status_code < 200 or r.status_code >= 300:
             logger.warn("Wrong status code %d: %s " % (r.status_code, r.text))
             raise MediaHavenException("Wrong status code %d: %s " % (r.status_code, r.text))
 
-    def call_absolute(self, url, params = None, method = None, raw_response = False):
-        if method == None:
+    def call_absolute(self, url, params=None, method=None, raw_response=False):
+        if method is None:
             method = 'get'
 
         def do_call():
@@ -116,12 +132,12 @@ class MediaHaven:
             return None
         return res['mediaDataList'][0]
 
-    def search(self, q, startIndex = 0, nrOfResults = 25):
+    def search(self, q, startIndex=0, nrOfResults=25):
         """Execute a mediahaven search query
         """
         return SearchResultIterator(self, q, startIndex, nrOfResults)
 
-    def set_log_http_requests(self, enabled = False):
+    def set_log_http_requests(self, enabled=False):
         """Toggle logging of http requests
         """
         http_client.HTTPConnection.debuglevel = 1 if enabled else 0
@@ -133,7 +149,7 @@ class MediaHaven:
         requests_log.setLevel(logLevel)
         requests_log.propagate = enabled
 
-    def media(self, mediaObjectId, action = None, *args, **kwargs):
+    def media(self, mediaObjectId, action=None, *args, **kwargs):
         """Do a media query
         """
         url = '/resources/media/%s' % urllib.parse.quote_plus(mediaObjectId)
@@ -143,7 +159,7 @@ class MediaHaven:
             return MediaDataListIterator(self, url = url)
         return self.call(url, *args, **kwargs)
 
-    def export(self, mediaObjectId, reason = None):
+    def export(self, mediaObjectId, reason=None):
         """Export a file
         """
         params = { "exportReason": reason } if reason else None
@@ -152,7 +168,7 @@ class MediaHaven:
 
     @classcache
     @logdecorator
-    def get_alto(self, pid, max_timeout = None):
+    def get_alto(self, pid, max_timeout=None):
         logger.debug('getting alto for %s ' % pid)
         res = self.search('+(originalFileName:%s_alto.xml)' % pid)
 
@@ -165,13 +181,12 @@ class MediaHaven:
             raise MediaHavenException("Expected only one result")
 
         res = next(res)
-        mediaObjectId = res['mediaObjectId']
-        export = self.export(mediaObjectId)
+        export = self.export(res['mediaObjectId'])
         if max_timeout is None:
-            max_timeout = 5
+            max_timeout = 15
         repeats = max_timeout * 10
-        logger.debug("Get export for %s" % mediaObjectId)
-        while (repeats > 0) and (not export.is_ready()):
+        logger.debug("Get export for %s" % res['mediaObjectId'])
+        while repeats > 0 and not export.is_ready():
             repeats -= 1
             time.sleep(0.1)
 
@@ -197,6 +212,7 @@ class MediaHaven:
         """
         return PreviewImage(pid, self)
 
+
 class PreviewImage:
     def __init__(self, pid, mh):
         self.mh  = mh
@@ -204,7 +220,7 @@ class PreviewImage:
         self.meta = None
         self.image = None
         self.closed = True
-        #self.__enter__()
+        # self.__enter__()
 
     def __enter__(self):
         return self.open()
@@ -234,7 +250,7 @@ class PreviewImage:
         self.closed = True
         return self
 
-    def highlight_confidence(self, im = None, max_timeout=None):
+    def highlight_confidence(self, im=None):
         if self.closed:
             raise IOError("Cannot work on a closed file")
 
@@ -276,8 +292,8 @@ class PreviewImage:
     def get_alto(self):
         return self.mh.get_alto(self.pid)
 
-    #@memoize
-    def get_words(self, words, search_kind = None):
+    # @memoize
+    def get_words(self, words, search_kind=None):
         if type(words) is str:
             words = [words]
         if search_kind is None:
@@ -315,7 +331,6 @@ class PreviewImage:
 
         pagedim = page.dimensions
 
-
         # printspace = next(page.iterfind('PrintSpace')).attrib
         # pagedim = (int(printspace['WIDTH']), int(printspace['HEIGHT']))
 
@@ -332,14 +347,12 @@ class PreviewImage:
             # "words_topleft": (min_x, min_y),
         })
 
-
-    def highlight_words(self, words, search_kind = None, im = None, crop = True, highlight_textblocks = True):
+    def highlight_words(self, words, search_kind=None, im=None, crop=True, highlight_textblocks=True):
         color = (255, 255, 0)
         if im is None:
             im = self.image.copy()
         canvas = ImageDraw.Draw(im)
-        coords =  self.get_words(words, search_kind = search_kind)
-        padding = 2
+        coords = self.get_words(words, search_kind=search_kind)
 
         (page_w, page_h) = coords['page_dimensions']
         (w, h) = im.size
@@ -415,7 +428,7 @@ class Export:
 
 
 class MediaDataListIterator:
-    def __init__(self, mh, params = {}, url = '/resources/media', start_index = 0, buffer_size = 25, param_map = None):
+    def __init__(self, mh, params={}, url='/resources/media', start_index=0, buffer_size=25, param_map=None):
         self.buffer_size = buffer_size
         self.mh = mh
         self.params = params
@@ -424,7 +437,7 @@ class MediaDataListIterator:
         self.buffer = []
         self.i = start_index
         self.buffer_idx = 0
-        if param_map != None:
+        if param_map is not None:
             self.param_map = param_map
         else:
             self.param_map = {
@@ -433,7 +446,7 @@ class MediaDataListIterator:
             }
 
     def __iter__(self):
-         return self
+        return self
 
     def fetch_next(self):
         for (k, v) in self.param_map.items():
@@ -441,19 +454,19 @@ class MediaDataListIterator:
 
         results = self.mh.call(self.url, self.params)
 
-        if self.length != None and self.length != results['totalNrOfResults']:
+        if self.length is not None and self.length != results['totalNrOfResults']:
             raise MediaHavenException("Difference in length, had %d, now getting %d" % (self.length, results['totalNrOfResults']))
 
         self.length = results['totalNrOfResults']
         self.buffer = results['mediaDataList']
 
     def __len__(self):
-        if self.length == None:
+        if self.length is None:
             self.fetch_next()
         return self.length
 
     def __next__(self):
-        if self.length == None:
+        if self.length is None:
             self.fetch_next()
 
         if self.i >= self.length:
@@ -462,7 +475,7 @@ class MediaDataListIterator:
         self.i += 1
         self.buffer_idx += 1
 
-        if (self.buffer_idx >= len(self.buffer) and self.i < self.length):
+        if self.buffer_idx >= len(self.buffer) and self.i < self.length:
             self.buffer_idx = 0
             self.fetch_next()
 
@@ -471,23 +484,30 @@ class MediaDataListIterator:
     def set_buffer_size(self, buffer_size):
         self.buffer_size = buffer_size
 
+
 class SearchResultIterator(MediaDataListIterator):
     def __init__(self, mh, q, start_index = 0, buffer_size = 25):
         super().__init__(mh, params = { "q": q }, start_index = start_index, buffer_size = buffer_size)
+
 
 class SearchKinds:
     def run(kind, words, tocheck):
         if tocheck is None:
             tocheck = ''
         return getattr(SearchKinds, kind)([word for word in words if type(word.full_text) is str], tocheck)
+
     def contains(words, tocheck):
         return [word for word in words if tocheck in word.full_text]
+
     def icontains(words, tocheck):
         return [word for word in words if tocheck.lower() in word.full_text.lower()]
+
     def literal(words, tocheck):
         return [word for word in words if tocheck == word.full_text]
+
     def iliteral(words, tocheck):
         return [word for word in words if tocheck.lower() == word.full_text.lower()]
+
 
 class Extent:
     def __init__(self, x, y, w, h):
@@ -500,18 +520,18 @@ class Extent:
         return [(self.x, self.y), (self.x + self.w, self.y + self.h)]
 
     def as_box(self):
-        return (self.x, self.y, self.x + self.w, self.y + self.h)
+        return self.x, self.y, self.x + self.w, self.y + self.h
 
     def __str__(self):
         return str(dict(self))
 
-    def scale(self, scale_x, scale_y, inplace = False):
+    def scale(self, scale_x, scale_y, inplace=False):
         if not inplace:
             return Extent(self.x * scale_x, self.y * scale_y, self.w * scale_x, self.h * scale_y)
         self.x *= scale_x
         self.y *= scale_y
         self.w *= scale_x
-        self.h *= scale_h
+        self.h *= scale_y
         return self
 
     @staticmethod
@@ -546,6 +566,7 @@ class Extent:
 
         return Extent.from_coords([(x1, y1), (x2, y2)])
 
+
 class Words(dict):
     def _serialize(obj):
         """JSON serializer for objects not serializable by default json code"""
@@ -560,10 +581,6 @@ class Words(dict):
         if isinstance(obj, ElementTree.Element):
             serial = obj.attrib
             return serial
-
-        #if isinstance(obj, Extent):
-    #        serial = obj.as_box;
-#            return serial
 
         return obj.__dict__
 
