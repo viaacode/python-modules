@@ -29,12 +29,12 @@ class Namenlijst:
         """Toggle logging of http requests
         """
         http_client.HTTPConnection.debuglevel = 1 if enabled else 0
-        logLevel = logging.DEBUG if enabled else logging.WARNING
+        log_level = logging.DEBUG if enabled else logging.WARNING
 
         logging.basicConfig()
-        logging.getLogger().setLevel(logLevel)
+        logging.getLogger().setLevel(log_level)
         requests_log = logging.getLogger("requests.packages.urllib3")
-        requests_log.setLevel(logLevel)
+        requests_log.setLevel(log_level)
         requests_log.propagate = enabled
 
     def __getattr__(self, method_name):

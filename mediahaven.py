@@ -89,6 +89,7 @@ class MediaHaven:
         self._validate_response(r)
         self.token = r.json()
         self.tokenText = self.token['token_type'] + ' ' + self.token['access_token']
+        return True
 
     def _validate_response(self, r):
         if r.status_code < 200 or r.status_code >= 300:
@@ -119,14 +120,15 @@ class MediaHaven:
         """
         return self.call_absolute(self.URL + url, *args, **kwargs)
 
-    def one(self, q):
+    def one(self, q=None):
         """Execute a mediahaven search query, return first result (or None)
         """
         params = {
-            "q": q,
             "startIndex": 0,
             "nrOfResults": 1
         }
+        if q is not None:
+            params['q'] = q
         res = self.call('/resources/media/', params)
         if not res:
             return None

@@ -84,5 +84,5 @@ def logger(f):
     global _log
     _log.setLevel(logging.DEBUG)
     _log = _log.debug
-    _log('CREATE %s' % f)
+    # _log('CREATE %s' % f)
     return f
