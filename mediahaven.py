@@ -299,7 +299,6 @@ class PreviewImage:
         if type(words) is str:
             words = [words]
         if search_kind is None:
-            search_kind = 'icontains'
             search_kind = 'containsproximity'
         alto = self.get_alto()
         page = list(alto.pages())
@@ -349,8 +348,7 @@ class PreviewImage:
             # "words_topleft": (min_x, min_y),
         })
 
-    def highlight_words(self, words, search_kind=None, im=None, crop=True, highlight_textblocks_color=None):
-        color = (0, 0, 255)
+    def highlight_words(self, words, search_kind=None, im=None, crop=True, highlight_textblocks_color=None, words_color=(255, 0, 0)):
         if im is None:
             im = self.image.copy()
         canvas = ImageDraw.Draw(im)
@@ -365,7 +363,7 @@ class PreviewImage:
 
         for word in coords['words']:
             rect = word['extent'].scale(scale_x, scale_y)
-            canvas.rectangle(rect.as_coords(), outline=color)
+            canvas.rectangle(rect.as_coords(), outline=words_color)
 
         if highlight_textblocks_color is not None:
             for textblock_extent in coords['textblocks']:
@@ -500,19 +498,18 @@ class SearchKinds:
     def run(kind, words, tocheck, **kwargs):
         if tocheck is None:
             tocheck = []
-        return getattr(SearchKinds, kind)([word for word in words if type(word.full_text) is str], tocheck, **kwargs)
+        method = getattr(SearchKinds, kind) if type(kind) is str else kind
+        return method([word for word in words if type(word.full_text) is str], tocheck, **kwargs)
 
     @staticmethod
     def containsproximity(words, tocheck, proximity=2):
         res = []
         for idx, word in enumerate(words):
-            for widx, w in enumerate(tocheck):
-                if w in word.full_text:
-                    # check proximity
-                    context = [w3.full_text for w3 in words[idx-proximity:idx+proximity]]
-                    if all(any(tocheckword in c for c in context) for tocheckword in tocheck):
-                        res.append(word)
-
+            if any(c in word.full_text for c in tocheck):
+                # check proximity
+                context = [c.full_text for c in words[idx-proximity:idx+proximity]]
+                if all(any(tocheckword in c for c in context) for tocheckword in tocheck):
+                    res.append(word)
         return res
 
     @staticmethod
