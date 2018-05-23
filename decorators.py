@@ -2,35 +2,42 @@ import logging
 logging.basicConfig()
 _log = logging.getLogger(__name__)
 
+
 class DictCacher:
-    '''Simple 'Local' cacher using a new dict... Usable to re-use same interface
+    """Simple 'Local' cacher using a new dict... Usable to re-use same interface
        for other classes...
-    '''
+    """
     def get(self, k):
         return getattr(self, str(k))
-    def set(self, k, v, *args, **kwargs):
+
+    def set(self, k, v):
         return setattr(self, str(k), v)
-    def has_key(self, k, *args, **kwargs):
+
+    def has_key(self, k):
         return hasattr(self, str(k))
+
 
 class NullCacher:
     def get(self, k):
         return None
-    def set(self, k, v, *args, **kwargs):
-        return False
-    def has_key(self, k, *args, **kwargs):
+
+    def set(self, k, v):
         return False
 
+    def has_key(self, k):
+        return False
+
+
 def memoize(f, cacher = None, timeout = None):
-    '''Usage:
+    """Usage:
     @memoize
     def someFunc():
-    '''
+    """
     if cacher is None:
         cacher = DictCacher()
 
     def get_cache_key(*args, **kwargs):
-        return (args, tuple(kwargs.items()))
+        return args, tuple(kwargs.items())
 
     def _cacher(*args, **kwargs):
         x = get_cache_key(*args, **kwargs)
@@ -45,23 +52,25 @@ def memoize(f, cacher = None, timeout = None):
 
     return _cacher
 
-def cache(timeout = None, cacher = None):
-    '''Usage:
+
+def cache(timeout=None, cacher=None):
+    """Usage:
     @cache(3600)
     def someFunc():
-    '''
+    """
     def _(f):
-        return memoize(f, cacher = cacher, timeout = timeout)
+        return memoize(f, cacher=cacher, timeout=timeout)
     return _
 
+
 def classcache(f):
-    '''Usage:
+    """Usage:
     class SomeClass:
         @classcache
         def someFunc(self):
-    '''
+    """
     def get_cache_key(*args, **kwargs):
-        return (args, tuple(kwargs.items()))
+        return args, tuple(kwargs.items())
 
     def _cacher(*args, **kwargs):
         cacher = args[0].get_cache()
@@ -82,7 +91,7 @@ def classcache(f):
 
 def logger(f):
     global _log
-    _log.setLevel(logging.DEBUG)
+    # _log.setLevel(logging.DEBUG)
     _log = _log.debug
     # _log('CREATE %s' % f)
     return f
