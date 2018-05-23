@@ -21,7 +21,7 @@ class Alto:
         return (AltoTextBlock(block, self.xmlns) for block in self._yield_types('TextBlock'))
 
     def words(self):
-        return ( AltoWord(i) for i in self._yield_types('String') )
+        return (AltoWord(i) for i in self._yield_types('String'))
 
 
 class AltoRoot(Alto):

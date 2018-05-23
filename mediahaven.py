@@ -300,6 +300,7 @@ class PreviewImage:
             words = [words]
         if search_kind is None:
             search_kind = 'icontains'
+            search_kind = 'containsproximity'
         alto = self.get_alto()
         page = list(alto.pages())
         if len(page) != 1:
@@ -315,8 +316,7 @@ class PreviewImage:
             textblock_extent = Extent.from_object(textblock)
             textblocks.append(textblock_extent)
             rects = []
-            for tocheck in words:
-                rects.extend(SearchKinds.run(search_kind, textblock.words(), tocheck))
+            rects.extend(SearchKinds.run(search_kind, textblock.words(), words))
 
             for rect in rects:
                 word_extent = Extent.from_object(rect)
@@ -349,8 +349,8 @@ class PreviewImage:
             # "words_topleft": (min_x, min_y),
         })
 
-    def highlight_words(self, words, search_kind=None, im=None, crop=True, highlight_textblocks=True):
-        color = (255, 255, 0)
+    def highlight_words(self, words, search_kind=None, im=None, crop=True, highlight_textblocks_color=None):
+        color = (0, 0, 255)
         if im is None:
             im = self.image.copy()
         canvas = ImageDraw.Draw(im)
@@ -367,15 +367,17 @@ class PreviewImage:
             rect = word['extent'].scale(scale_x, scale_y)
             canvas.rectangle(rect.as_coords(), outline=color)
 
-        if highlight_textblocks:
+        if highlight_textblocks_color is not None:
             for textblock_extent in coords['textblocks']:
-                canvas.rectangle(textblock_extent.scale(scale_x, scale_y).as_coords(), outline=(0, 0, 255))
+                canvas.rectangle(textblock_extent.scale(scale_x, scale_y).as_coords(),
+                                 outline=highlight_textblocks_color)
 
         if coords['extent_textblocks']:
             if crop:
                 im = im.crop(coords['extent_textblocks'].scale(scale_x, scale_y).as_box())
-            else:
-                canvas.rectangle(coords['extent_textblocks'].scale(scale_x, scale_y).as_coords(), outline=(0, 0, 255))
+            elif highlight_textblocks_color is not None:
+                canvas.rectangle(coords['extent_textblocks'].scale(scale_x, scale_y).as_coords(),
+                                 outline=highlight_textblocks_color)
 
         pagepad = 30
         # page_w = w
@@ -384,9 +386,10 @@ class PreviewImage:
         page_h *= scale_y
         page_w -= 2*pagepad
         page_h -= 2*pagepad
-        pagecoords = [(pagepad, pagepad), (page_w, page_h)]
 
-        canvas.rectangle(pagecoords, outline=(0, 255, 0))
+        # highlight page coords
+        # pagecoords = [(pagepad, pagepad), (page_w, page_h)]
+        # canvas.rectangle(pagecoords, outline=(0, 255, 0))
         return im
 
 
@@ -488,27 +491,59 @@ class MediaDataListIterator:
 
 
 class SearchResultIterator(MediaDataListIterator):
-    def __init__(self, mh, q, start_index = 0, buffer_size = 25):
-        super().__init__(mh, params = { "q": q }, start_index = start_index, buffer_size = buffer_size)
+    def __init__(self, mh, q, start_index=0, buffer_size=25):
+        super().__init__(mh, params={"q": q}, start_index=start_index, buffer_size=buffer_size)
 
 
 class SearchKinds:
-    def run(kind, words, tocheck):
+    @staticmethod
+    def run(kind, words, tocheck, **kwargs):
         if tocheck is None:
-            tocheck = ''
-        return getattr(SearchKinds, kind)([word for word in words if type(word.full_text) is str], tocheck)
+            tocheck = []
+        return getattr(SearchKinds, kind)([word for word in words if type(word.full_text) is str], tocheck, **kwargs)
 
+    @staticmethod
+    def containsproximity(words, tocheck, proximity=2):
+        res = []
+        for idx, word in enumerate(words):
+            for widx, w in enumerate(tocheck):
+                if w in word.full_text:
+                    # check proximity
+                    context = [w3.full_text for w3 in words[idx-proximity:idx+proximity]]
+                    if all(any(tocheckword in c for c in context) for tocheckword in tocheck):
+                        res.append(word)
+
+        return res
+
+    @staticmethod
     def contains(words, tocheck):
-        return [word for word in words if tocheck in word.full_text]
+        res = []
+        for w in tocheck:
+            res.extend([word for word in words if w in word.full_text])
+        return res
 
+    @staticmethod
     def icontains(words, tocheck):
-        return [word for word in words if tocheck.lower() in word.full_text.lower()]
+        res = []
+        for w in tocheck:
+            w = w.lower()
+            res.extend([word for word in words if w in word.full_text.lower()])
+        return res
 
+    @staticmethod
     def literal(words, tocheck):
-        return [word for word in words if tocheck == word.full_text]
+        res = []
+        for w in tocheck:
+            res.extend([word for word in words if w == word.full_text])
+        return res
 
+    @staticmethod
     def iliteral(words, tocheck):
-        return [word for word in words if tocheck.lower() == word.full_text.lower()]
+        res = []
+        for w in tocheck:
+            w = w.lower()
+            res.extend([word for word in words if w == word.full_text.lower()])
+        return res
 
 
 class Extent:
