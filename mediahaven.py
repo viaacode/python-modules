@@ -507,7 +507,7 @@ class SearchKinds:
         for idx, word in enumerate(words):
             if any(c in word.full_text for c in tocheck):
                 # check proximity
-                context = [c.full_text for c in words[idx-proximity:idx+proximity]]
+                context = [c.full_text for c in words[idx-proximity:idx+proximity+1]]
                 if all(any(tocheckword in c for c in context) for tocheckword in tocheck):
                     res.append(word)
         return res
