@@ -5,21 +5,26 @@ import importlib
 
 import unidecode
 import re
+
+
 def normalize(txt):
-    return re.sub(r"[^a-z]", '', unidecode.unidecode(txt).lower())
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z ]", '', unidecode.unidecode(txt).lower()))
 
 
 class NERException(Exception):
     pass
 
+
 # abstract base class
 class NER:
     def tokenize(self, text):
         raise NotImplemented()
+
     def tag_entities(self, text, *args, **kwargs):
         raise NotImplemented()
 
-class NERFactory():
+
+class NERFactory:
     def __init__(self, config = None):
         self.config = Config(config, 'ner')
 

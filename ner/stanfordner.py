@@ -3,14 +3,16 @@ from nltk.tag import StanfordNERTagger
 from nltk.tokenize import word_tokenize
 import os
 
+
 class StanfordNER:
     def __init__(self, path = None):
-        if path == None:
+        if path is None:
             path = os.path.dirname(os.path.realpath(__file__)) + '/'
         self.ner = StanfordNERTagger(path + 'classifiers/english.all.3class.distsim.crf.ser.gz',
-                                path + 'stanford-ner.jar',
-                                encoding='utf-8')
-        self.set = set() # set(['LOCATION', 'ORGANIZATION', 'PERSON'])
+                                     path + 'stanford-ner.jar',
+                                     encoding='utf-8')
+
+        self.set = set()  # set(['LOCATION', 'ORGANIZATION', 'PERSON'])
 
     def tag(self, text, group = False):
         tokenized_text = word_tokenize(text)
@@ -21,7 +23,8 @@ class StanfordNER:
             classified_text = self.group_tagged_entities(classified_text)
         return classified_text
 
-    def group_tagged_entities(self, tokens, buffer_size = 20):
+    @staticmethod
+    def group_tagged_entities(tokens, buffer_size=20):
         l = len(tokens)
         idx = 0
         detected = []
@@ -44,3 +47,4 @@ class StanfordNER:
             idx += 1
 
         return detected
+
