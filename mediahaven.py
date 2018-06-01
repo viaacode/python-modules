@@ -14,13 +14,14 @@
 import requests as req
 import logging
 import http.client as http_client
-import urllib
+from urllib.parse import quote_plus
 import datetime
 import time
 import json
 from . import alto
 from .config import Config
-from .decorators import cache, memoize, classcache, logger as logdecorator, DictCacher
+from .decorators import classcache, logger as logdecorator
+from .cache import LocalCacher
 from PIL import Image, ImageDraw
 from io import BytesIO
 from xml.etree import ElementTree
@@ -58,7 +59,7 @@ class MediaHaven:
         self.token = None
         self.tokenText = None
 
-        self.__cache = DictCacher()
+        self.__cache = LocalCacher(500)
         if 'cache' in _:
             self.__cache = _['cache']
 
@@ -68,10 +69,10 @@ class MediaHaven:
             logger.propagate = True
             logger.debug('Debugging enabled through configuration')
 
-    def get_cache(self):
+    def get_cacher(self):
         return self.__cache
 
-    def set_cache(self, cache):
+    def set_cacher(self, cache):
         self.__cache = cache
         return self
 
@@ -85,15 +86,18 @@ class MediaHaven:
         """Fetch a new token based on the user/pass combination of config
         """
         conf = self.config
-        r = req.post(self.URL + '/resources/oauth/access_token', auth=(conf['user'], conf['pass']), data={'grant_type': 'password'})
+        r = req.post(self.URL + '/resources/oauth/access_token',
+                     auth=(conf['user'], conf['pass']),
+                     data={'grant_type': 'password'})
         self._validate_response(r)
         self.token = r.json()
         self.tokenText = self.token['token_type'] + ' ' + self.token['access_token']
         return True
 
-    def _validate_response(self, r):
+    @staticmethod
+    def _validate_response(r):
         if r.status_code < 200 or r.status_code >= 300:
-            logger.warn("Wrong status code %d: %s " % (r.status_code, r.text))
+            logger.warning("Wrong status code %d: %s " % (r.status_code, r.text))
             raise MediaHavenException("Wrong status code %d: %s " % (r.status_code, r.text))
 
     def call_absolute(self, url, params=None, method=None, raw_response=False):
@@ -103,7 +107,7 @@ class MediaHaven:
         def do_call():
             if not self.tokenText:
                 self.refresh_token()
-            res = getattr(req, method)(url, headers={'Authorization': self.tokenText}, params = params)
+            res = getattr(req, method)(url, headers={'Authorization': self.tokenText}, params=params)
             return res
 
         r = do_call()
@@ -134,38 +138,39 @@ class MediaHaven:
             return None
         return res['mediaDataList'][0]
 
-    def search(self, q, startIndex=0, nrOfResults=25):
+    def search(self, q, start_index=0, nr_of_results=25):
         """Execute a mediahaven search query
         """
-        return SearchResultIterator(self, q, startIndex, nrOfResults)
+        return SearchResultIterator(self, q, start_index, nr_of_results)
 
-    def set_log_http_requests(self, enabled=False):
+    @staticmethod
+    def set_log_http_requests(enabled=False):
         """Toggle logging of http requests
         """
         http_client.HTTPConnection.debuglevel = 1 if enabled else 0
-        logLevel = logging.DEBUG if enabled else logging.WARNING
+        log_level = logging.DEBUG if enabled else logging.WARNING
 
         logging.basicConfig()
-        logging.getLogger().setLevel(logLevel)
+        logging.getLogger().setLevel(log_level)
         requests_log = logging.getLogger("requests.packages.urllib3")
-        requests_log.setLevel(logLevel)
+        requests_log.setLevel(log_level)
         requests_log.propagate = enabled
 
-    def media(self, mediaObjectId, action=None, *args, **kwargs):
+    def media(self, media_object_id, action=None, *args, **kwargs):
         """Do a media query
         """
-        url = '/resources/media/%s' % urllib.parse.quote_plus(mediaObjectId)
+        url = '/resources/media/%s' % quote_plus(media_object_id)
         if action:
             url = '%s/%s' % (url, action)
         if action in ['fragments']:
-            return MediaDataListIterator(self, url = url)
+            return MediaDataListIterator(self, url=url)
         return self.call(url, *args, **kwargs)
 
-    def export(self, mediaObjectId, reason=None):
+    def export(self, media_object_id, reason=None):
         """Export a file
         """
         params = { "exportReason": reason } if reason else None
-        res = self.media(mediaObjectId, 'export', method='post', raw_response = True, params = params)
+        res = self.media(media_object_id, 'export', method='post', raw_response=True, params=params)
         return Export(self, res.headers['Location'], res.json())
 
     @classcache
@@ -199,15 +204,15 @@ class MediaHaven:
 
         files = export.get_files()
         if files is None or len(files) != 1:
-            logger.warning("Couldn't get files. %s" % ('None' if files is None else ('Length: %d' % len(files))))
+            logger.warning("Couldn't get files. Length: %s", 'None' if files is None else str(len(files)))
             raise MediaHavenException("Couldn't get files...")
 
         return alto.AltoRoot(req.get(files[0]).content)
 
-    def fragments(self, mediaObjectId):
+    def fragments(self, media_object_id):
         """Get fragments for a media object
         """
-        return self.media(mediaObjectId, 'fragments')
+        return self.media(media_object_id, 'fragments')
 
     def get_preview(self, pid):
         """Get a preview of an item (fetches previewImagePath for pid)
@@ -217,7 +222,7 @@ class MediaHaven:
 
 class PreviewImage:
     def __init__(self, pid, mh):
-        self.mh  = mh
+        self.mh = mh
         self.pid = pid
         self.meta = None
         self.image = None
@@ -256,8 +261,7 @@ class PreviewImage:
         if self.closed:
             raise IOError("Cannot work on a closed file")
 
-        alto = self.get_alto()
-        pages = list(alto.pages())
+        pages = list(self.get_alto().pages())
         if len(pages) != 1:
             raise MediaHavenException("Expected only 1 page, got %d" % len(pages))
 
@@ -300,8 +304,7 @@ class PreviewImage:
             words = [words]
         if search_kind is None:
             search_kind = 'containsproximity'
-        alto = self.get_alto()
-        page = list(alto.pages())
+        page = list(self.get_alto().pages())
         if len(page) != 1:
             raise MediaHavenException("Expected only 1 page, got %d" % len(page))
         page = page[0]
@@ -344,11 +347,15 @@ class PreviewImage:
             "extent_words": words_extent,
             "extent_textblocks": textblocks_extent,
             "textblocks": textblocks,
-            "ext2": Extent(page.oa('LeftMargin', 'HPOS'), page.oa('TopMargin', 'VPOS'), page.oa('RightMargin', 'HPOS'), page.oa('BottomMargin', 'VPOS'))
+            "ext2": Extent(page.oa('LeftMargin', 'HPOS'),
+                           page.oa('TopMargin', 'VPOS'),
+                           page.oa('RightMargin', 'HPOS'),
+                           page.oa('BottomMargin', 'VPOS'))
             # "words_topleft": (min_x, min_y),
         })
 
-    def highlight_words(self, words, search_kind=None, im=None, crop=True, highlight_textblocks_color=None, words_color=(255, 0, 0)):
+    def highlight_words(self, words, search_kind=None, im=None, crop=True, highlight_textblocks_color=None,
+                        words_color=(255, 0, 0)):
         if im is None:
             im = self.image.copy()
         canvas = ImageDraw.Draw(im)
@@ -431,10 +438,10 @@ class Export:
 
 
 class MediaDataListIterator:
-    def __init__(self, mh, params={}, url='/resources/media', start_index=0, buffer_size=25, param_map=None):
+    def __init__(self, mh, params=None, url='/resources/media', start_index=0, buffer_size=25, param_map=None):
         self.buffer_size = buffer_size
         self.mh = mh
-        self.params = params
+        self.params = params if params is not None else dict()
         self.url = url
         self.length = None
         self.buffer = []
@@ -458,7 +465,8 @@ class MediaDataListIterator:
         results = self.mh.call(self.url, self.params)
 
         if self.length is not None and self.length != results['totalNrOfResults']:
-            raise MediaHavenException("Difference in length, had %d, now getting %d" % (self.length, results['totalNrOfResults']))
+            raise MediaHavenException(
+                "Difference in length, had %d, now getting %d" % (self.length, results['totalNrOfResults']))
 
         self.length = results['totalNrOfResults']
         self.buffer = results['mediaDataList']
@@ -557,7 +565,7 @@ class Extent:
         return self.x, self.y, self.x + self.w, self.y + self.h
 
     def __str__(self):
-        return str(dict(self))
+        return str(self.__dict__)
 
     def scale(self, scale_x, scale_y, inplace=False):
         if not inplace:

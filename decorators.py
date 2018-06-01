@@ -1,65 +1,50 @@
 import logging
+from . import cache
 logging.basicConfig()
 _log = logging.getLogger(__name__)
+# _log.setLevel(logging.DEBUG)
 
 
-class DictCacher:
-    """Simple 'Local' cacher using a new dict... Usable to re-use same interface
-       for other classes...
-    """
-    def get(self, k):
-        return getattr(self, str(k))
-
-    def set(self, k, v):
-        return setattr(self, str(k), v)
-
-    def has_key(self, k):
-        return hasattr(self, str(k))
+def logger(f):
+    global _log
+    _log = _log.debug
+    # _log('CREATE %s' % f)
+    return f
 
 
-class NullCacher:
-    def get(self, k):
-        return None
-
-    def set(self, k, v):
-        return False
-
-    def has_key(self, k):
-        return False
-
-
-def memoize(f, cacher = None, timeout = None):
+def memoize(f, cacher=None):
     """Usage:
     @memoize
     def someFunc():
     """
     if cacher is None:
-        cacher = DictCacher()
+        cacher = cache.DictCacher()
 
     def get_cache_key(*args, **kwargs):
-        return args, tuple(kwargs.items())
+        return str((args, tuple(kwargs.items())))
 
     def _cacher(*args, **kwargs):
+        global _log
         x = get_cache_key(*args, **kwargs)
-        if cacher.has_key(x):
-            res = cacher.get(x)
-            _log('%s: get: %s' % (memoize.__name__, f.__name__, str(x)))
+        if x in cacher:
+            res = cacher[x]
+            _log('%s: gotten: %s' % (memoize.__name__, f.__name__, str(x)))
         else:
             res = f(*args, **kwargs)
             _log('%s: set: %s' % (memoize.__name__, f.__name__, str(x)))
-            cacher.set(x, res, timeout)
+            cacher[x] = res
         return res
 
     return _cacher
 
 
-def cache(timeout=None, cacher=None):
+def cache(cacher=None):
     """Usage:
-    @cache(3600)
+    @cache(LocalCacher())
     def someFunc():
     """
     def _(f):
-        return memoize(f, cacher=cacher, timeout=timeout)
+        return memoize(f, cacher=cacher)
     return _
 
 
@@ -73,25 +58,23 @@ def classcache(f):
         return args, tuple(kwargs.items())
 
     def _cacher(*args, **kwargs):
-        cacher = args[0].get_cache()
+        global _log
+        cacher = args[0].get_cacher()
         if not cacher:
-            cacher = NullCacher()
+            cacher = cache.NullCacher()
         x = get_cache_key(*args[1:], **kwargs)
-        if cacher.has_key(x):
-            res = cacher.get(x)
+        if x in cacher:
+            res = cacher[x]
             _log('%s(%s): get: %s' % (classcache.__name__, f.__name__, str(x)))
         else:
             res = f(*args, **kwargs)
             _log('%s(%s): set: %s' % (classcache.__name__, f.__name__, str(x)))
-            cacher.set(x, res)
+            cacher[x] = res
         return res
 
     return _cacher
 
 
-def logger(f):
-    global _log
-    # _log.setLevel(logging.DEBUG)
-    _log = _log.debug
-    # _log('CREATE %s' % f)
-    return f
+if __name__ == '__main__':
+    import doctest
+    doctest.testmod()
