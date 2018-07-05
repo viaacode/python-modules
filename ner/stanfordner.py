@@ -1,11 +1,10 @@
-import nltk
 from nltk.tag import StanfordNERTagger
 from nltk.tokenize import word_tokenize
 import os
 
 
 class StanfordNER:
-    def __init__(self, path = None):
+    def __init__(self, path=None):
         if path is None:
             path = os.path.dirname(os.path.realpath(__file__)) + '/'
         self.ner = StanfordNERTagger(path + 'classifiers/english.all.3class.distsim.crf.ser.gz',
@@ -14,7 +13,7 @@ class StanfordNER:
 
         self.set = set()  # set(['LOCATION', 'ORGANIZATION', 'PERSON'])
 
-    def tag(self, text, group = False):
+    def tag(self, text, group=False, language=None):
         tokenized_text = word_tokenize(text)
         classified_text = self.ner.tag(tokenized_text)
         if len(self.set):

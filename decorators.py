@@ -1,15 +1,12 @@
 import logging
+
 from . import cache
+
 logging.basicConfig()
 _log = logging.getLogger(__name__)
-# _log.setLevel(logging.DEBUG)
-
-
-def logger(f):
-    global _log
-    _log = _log.debug
-    # _log('CREATE %s' % f)
-    return f
+_log.propagate = True
+_log.setLevel(logging.DEBUG)
+_log = _log.debug
 
 
 def memoize(f, cacher=None):
@@ -61,7 +58,7 @@ def classcache(f):
         global _log
         cacher = args[0].get_cacher()
         if not cacher:
-            cacher = cache.NullCacher()
+            cacher = cache.DummyCacher()
         x = get_cache_key(*args[1:], **kwargs)
         if x in cacher:
             res = cacher[x]
@@ -76,5 +73,7 @@ def classcache(f):
 
 
 if __name__ == '__main__':
+    # run with `python3 -m pythonmodules.decorators` from parent directory
     import doctest
     doctest.testmod()
+

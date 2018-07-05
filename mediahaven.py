@@ -20,7 +20,7 @@ import time
 import json
 from . import alto
 from .config import Config
-from .decorators import classcache, logger as logdecorator
+from .decorators import classcache
 from .cache import LocalCacher
 from PIL import Image, ImageDraw
 from io import BytesIO
@@ -174,7 +174,6 @@ class MediaHaven:
         return Export(self, res.headers['Location'], res.json())
 
     @classcache
-    @logdecorator
     def get_alto(self, pid, max_timeout=None):
         logger.debug('getting alto for %s ' % pid)
         res = self.search('+(originalFileName:%s_alto.xml)' % pid)

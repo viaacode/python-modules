@@ -1,8 +1,5 @@
 from pythonmodules.config import Config
-import sys
 import importlib
-
-
 import unidecode
 import re
 
@@ -17,7 +14,7 @@ class NERException(Exception):
 
 # abstract base class
 class NER:
-    def tokenize(self, text):
+    def tokenize(self, text, language=None):
         raise NotImplemented()
 
     def tag_entities(self, text, *args, **kwargs):
@@ -28,7 +25,7 @@ class NERFactory:
     def __init__(self, config = None):
         self.config = Config(config, 'ner')
 
-    def get(self, class_name = None, *args, **kwargs):
+    def get(self, class_name=None, *args, **kwargs):
         if class_name is None and 'class_name' in self.config:
             class_name = self.config['class_name']
             if 'args' in self.config:

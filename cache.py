@@ -29,12 +29,17 @@ class WrapperCacher:
     """Wrapper class for cache classes that use .get, .set and .has_key methods instead of item assignments,
     eg. django FileBasedClass
     """
-
-    def __init__(self, obj):
+    def __init__(self, obj,  timeout=None, version=None):
         self.obj = obj
+        self.extra_write_arguments = []
+        if timeout is not None:
+            self.extra_write_arguments.append(timeout)
+        if version is not None:
+            self.extra_write_arguments.append(version)
 
     def __setitem__(self, k, v):
-        return self.obj.set(k, v)
+        args = [k, v].extend(self.extra_write_arguments)
+        return self.obj.set(*args)
 
     def __getitem__(self, k):
         return self.obj.get(k)
@@ -88,17 +93,28 @@ class LocalCacher:
         return str(k) in self.dict
 
 
-class NullCacher:
+class DummyCacher:
+    """
+    >>> cache = DummyCacher()
+    >>> cache['test'] = True
+    >>> print(cache['test'])
+    None
+    >>> 'test' in cache
+    False
+    >>> cache['test2'] = 2
+    >>> 'test2' in cache
+    False
+    """
     @staticmethod
-    def __getitem__(self, item):
+    def __getitem__(i):
         return None
 
     @staticmethod
-    def __setitem__(self, key, value):
+    def __setitem__(k, v):
         return False
 
     @staticmethod
-    def __contains__(*args):
+    def __contains__(k):
         return False
 
 
