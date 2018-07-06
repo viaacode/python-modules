@@ -1,23 +1,25 @@
-# based on https://nlpforhackers.io/named-entity-extraction/
+from pythonmodules.ner import NER
+import pickle
+import logging
 
 import os
 import string
 import collections
-import pickle
 from collections import Iterable
 
 from nltk.tag import ClassifierBasedTagger
 from nltk.chunk import ChunkParserI, conlltags2tree, tree2conlltags
-from nltk import pos_tag, word_tokenize
 from nltk.stem import SnowballStemmer
+from nltk import pos_tag, word_tokenize
+from nltk.sem.relextract import _expand as expand_bio
 
-from pythonmodules.profiling import timeit
+logger = logging.getLogger(__name__)
+
+# based on https://nlpforhackers.io/named-entity-extraction/
 
 ner_tags = collections.Counter()
 
 # http://gmb.let.rug.nl/releases/gmb-2.2.0.zip
-# https://www.clips.uantwerpen.be/conll2002/ner/data/ned.train
-# https://www.clips.uantwerpen.be/conll2002/ner/data/esp.train
 corpus_root = "gmb-2.2.0"  # Make sure you set the proper path to the unzipped corpus
 
 
@@ -168,68 +170,36 @@ class NamedEntityChunker(ChunkParserI):
         # Transform the list of triplets to nltk.Tree format
         return iob_triplets
 
+    def evaluate(self, gold):
+        return NotImplementedError()
+
     @staticmethod
     def conlltags_to_tree(iob_triplets):
         return conlltags2tree(iob_triplets)
 
 
-if __name__ == '__main__':
-    from argparse import ArgumentParser
-    import logging
-    # from random import sample
-    parser = ArgumentParser(description='Train and test NER')
-    parser.add_argument('--train', action='store_true', help='Train a tagger')
-    parser.add_argument('--test', help='Test the tagger with TEST known examples (default 500)', default=500)
-    parser.add_argument('--test-mediahaven', action='store_true', help='Tag MediaHaven newspaper OCR-text')
-    parser.add_argument('--profile', action='store_true', help='Output run times of some key operations')
-    parser.add_argument(dest='pickle', help='Filename of pickle file')
-    args = parser.parse_args()
-    if not args.profile:
-        logging.getLogger('pythonmodules.profiling').setLevel(logging.ERROR)
+class GMBNER(NER):
+    def __init__(self, file='gmb-2.2.0.pickle'):
+        if file is None:
+            raise FileNotFoundError('A pickled chunker should be passed')
+        self.chunker = pickle.load(open(file, 'rb'))
 
-    class Samples:
-        def __init__(self):
-            self.data = None
+    def tag(self, text, language=None, **kwargs):
+        tags = self.chunker.parse(pos_tag(word_tokenize(text)))
+        res = []
+        for word, pos, bio in tags:
+            if bio == 'O':
+                res.append((word, bio))
+                continue
+            bio = expand_bio(bio[2:].upper())
+            if bio not in NER.allowed_tags:
+                bio = 'O'
+            res.append((word, bio))
+        return res
 
-        def init(self):
-            reader = read_gmb()
-            data = list(reader)
-            self.data = (data[:int(len(data) * 0.1)], data[int(len(data) * 0.1):])
 
-        def training(self):
-            if self.data is None:
-                self.init()
-            return self.data[1]
 
-        def test(self, amount=500):
-            if self.data is None:
-                # optim: no need to read all the data if we only using test
-                reader = read_gmb()
-                return [next(reader) for i in range(amount)]
-            return self.data[0][:amount]
 
-    samples = Samples()
-    if args.train:
-        with timeit('Creating NamedEntityChunker'):
-            chunker = NamedEntityChunker(samples.training())
-        pickle.dump(chunker, open(args.pickle, 'wb'))
-    else:
-        with timeit('Pickle load'):
-            chunker = pickle.load(open(args.pickle, 'rb'))
 
-    if args.test_mediahaven:
-        with timeit('NER Tagging'):
-            from pythonmodules.mediahaven import MediaHaven
 
-            # from pythonmodules.config import Config
-            mh = MediaHaven()
-            item = mh.one('+(workflow:GMS) +(archiveStatus:on_tape)')
-            print(chunker.parse(pos_tag(word_tokenize(item['description']))))
 
-    if args.test:
-        with timeit('Testing accuracy'):
-            testsamples = samples.test(int(args.test))
-            score = chunker.evaluate(
-                [conlltags2tree([(w, t, iob) for (w, t), iob in iobs]) for iobs in testsamples]
-            )
-            print("Test accuracy = %.2f%% (tested using %d samples)" % (score.accuracy() * 100, len(testsamples)))

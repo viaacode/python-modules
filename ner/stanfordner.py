@@ -1,9 +1,10 @@
 from nltk.tag import StanfordNERTagger
 from nltk.tokenize import word_tokenize
+from pythonmodules.ner import NER
 import os
 
 
-class StanfordNER:
+class StanfordNER(NER):
     def __init__(self, path=None):
         if path is None:
             path = os.path.dirname(os.path.realpath(__file__)) + '/'
@@ -13,7 +14,7 @@ class StanfordNER:
 
         self.set = set()  # set(['LOCATION', 'ORGANIZATION', 'PERSON'])
 
-    def tag(self, text, group=False, language=None):
+    def tag(self, text, group=False, language=None, **kwargs):
         tokenized_text = word_tokenize(text)
         classified_text = self.ner.tag(tokenized_text)
         if len(self.set):
