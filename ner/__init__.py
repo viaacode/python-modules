@@ -1,4 +1,5 @@
 from pythonmodules.config import Config
+from pythonmodules.profiling import timeit
 import importlib
 import unidecode
 import re
@@ -29,7 +30,7 @@ class NER:
 
 
 class NERFactory:
-    KNOWN_TAGGERS = ('StanfordNER', 'GMBNER')
+    KNOWN_TAGGERS = ('StanfordNER', 'GMBNER', 'StanfordNERClient')
 
     def __init__(self, config=None):
         self.config = Config(config, 'ner')

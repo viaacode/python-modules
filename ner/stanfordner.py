@@ -8,8 +8,8 @@ class StanfordNER(NER):
     def __init__(self, path=None):
         if path is None:
             path = os.path.dirname(os.path.realpath(__file__)) + '/'
-        self.ner = StanfordNERTagger(path + 'classifiers/english.all.3class.distsim.crf.ser.gz',
-                                     path + 'stanford-ner.jar',
+        self.ner = StanfordNERTagger(path + 'stanford/classifiers/english.all.3class.distsim.crf.ser.gz',
+                                     path + 'stanford/stanford-ner.jar',
                                      encoding='utf-8')
 
         self.set = set()  # set(['LOCATION', 'ORGANIZATION', 'PERSON'])

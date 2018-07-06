@@ -124,13 +124,15 @@ class MediaHaven:
         """
         return self.call_absolute(self.URL + url, *args, **kwargs)
 
-    def one(self, q=None):
+    def one(self, q=None, **kwargs):
         """Execute a mediahaven search query, return first result (or None)
         """
         params = {
             "startIndex": 0,
             "nrOfResults": 1
         }
+        for k in kwargs:
+            params[k] = kwargs[k]
         if q is not None:
             params['q'] = q
         res = self.call('/resources/media/', params)
