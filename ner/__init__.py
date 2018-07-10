@@ -1,5 +1,4 @@
 from pythonmodules.config import Config
-from pythonmodules.profiling import timeit
 import importlib
 import unidecode
 import re

@@ -7,7 +7,7 @@ if [ "$1" == "--help" ]; then
 fi
 
 
-p="$(cd "$(dirname "$1")"; pwd)"
+p="$(cd "$(dirname "$0")"; pwd)"
 
 if [ ! -d "$p/stanford" ]; then
 	echo "Missing directory 'stanford', did you run download_stanford.sh already?" >&2
@@ -17,11 +17,11 @@ fi
 scriptdir="$p/stanford"
 cd "$scriptdir"
 
-args=" -mx700m -cp $scriptdir/stanford-ner.jar:$scriptdir/lib/\*"
-args2=" -loadClassifier $scriptdir/classifiers/english.all.3class.distsim.crf.ser.gz  -inputEncoding UTF-8 -outputEncoding UTF-8"
-
+cmd="java -mx700m -cp $scriptdir/stanford-ner.jar:$scriptdir/lib/\*"
+args=" -loadClassifier $scriptdir/classifiers/english.all.3class.distsim.crf.ser.gz  -inputEncoding UTF-8 -outputEncoding UTF-8 -tokenizerOptions untokenizable=noneDelete "
+args="$args -tokenizerFactory edu.stanford.nlp.process.WhitespaceTokenizer -encoding utf8 "
 if [ "$#" -lt 1 ]; then
-	java ${args} edu.stanford.nlp.ie.NERServer ${args2} -port 9001
+	${cmd} edu.stanford.nlp.ie.NERServer ${args} -port 9001
 else
-	java ${args} edu.stanford.nlp.ie.crf.CRFClassifier ${args2} -textFile "$1"
+	${cmd} edu.stanford.nlp.ie.crf.CRFClassifier ${args} -textFile "$1"
 fi

@@ -17,6 +17,10 @@ class StanfordNERClient(NER):
         self.server = Ner(host=self.host, port=self.port)
 
     def tag(self, text, **kwargs):
+        # remove "untokenizable" characters to avoid warning from ner server
+        text = bytes(text, 'utf-8').decode('utf-8', 'ignore')
+        text = text.replace('\xFF\xFD', '')
+
         text = str(text).splitlines()
         if self.server is None:
             self.connect()

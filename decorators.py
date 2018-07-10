@@ -39,6 +39,17 @@ def cache(cacher=None):
     """Usage:
     @cache(LocalCacher())
     def someFunc():
+
+    > @cache
+    > def test():
+    >   print 'test'
+    >   return 'result'
+    >
+    > test()
+    test
+    'result'
+    > test()
+    'result'
     """
     def _(f):
         return memoize(f, cacher=cacher)
