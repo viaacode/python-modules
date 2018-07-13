@@ -38,7 +38,8 @@ class WrapperCacher:
             self.extra_write_arguments.append(version)
 
     def __setitem__(self, k, v):
-        args = [k, v].extend(self.extra_write_arguments)
+        args = [k, v]
+        args.extend(self.extra_write_arguments)
         return self.obj.set(*args)
 
     def __getitem__(self, k):
