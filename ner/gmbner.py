@@ -1,4 +1,4 @@
-from pythonmodules.ner import NER
+from pythonmodules.ner import NER, simplify_bio_tags
 import pickle
 import logging
 
@@ -11,7 +11,6 @@ from nltk.tag import ClassifierBasedTagger
 from nltk.chunk import ChunkParserI, conlltags2tree, tree2conlltags
 from nltk.stem import SnowballStemmer
 from nltk import pos_tag, word_tokenize
-from nltk.sem.relextract import _expand as expand_bio
 
 logger = logging.getLogger(__name__)
 
@@ -186,16 +185,7 @@ class GMBNER(NER):
 
     def tag(self, text, language=None, **kwargs):
         tags = self.chunker.parse(pos_tag(word_tokenize(text)))
-        res = []
-        for word, pos, bio in tags:
-            if bio == 'O':
-                res.append((word, bio))
-                continue
-            bio = expand_bio(bio[2:].upper())
-            if bio not in NER.allowed_tags:
-                bio = 'O'
-            res.append((word, bio))
-        return res
+        return simplify_bio_tags(tags)
 
 
 

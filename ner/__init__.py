@@ -4,9 +4,11 @@ import unidecode
 import re
 import json
 import logging
+from nltk.sem.relextract import short2long
+
 
 logger = logging.getLogger(__name__)
-
+short2long = dict(LOC='LOCATION', ORG='ORGANIZATION', PER='PERSON', GEO='LOCATION')
 
 def normalize(txt):
     return re.sub(r"\s+", " ", re.sub(r"[^a-z ]", '', unidecode.unidecode(txt).lower()))
@@ -48,3 +50,14 @@ class NERFactory:
         m = importlib.import_module(__name__ + '.' + class_name.lower())
         c = getattr(m, class_name)
         return c(*args, **kwargs)
+
+
+def simplify_bio_tags(tags):
+    for word, pos, bio in tags:
+        try:
+            bio = short2long[bio[2:].upper()]
+            if bio not in NER.allowed_tags:
+                bio = 'O'
+        except KeyError:
+            bio = 'O'
+        yield (word, bio)

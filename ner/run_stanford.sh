@@ -17,9 +17,14 @@ fi
 scriptdir="$p/stanford"
 cd "$scriptdir"
 
+CLASSIFIER=${CLASSIFIER:-english.all.3class.distsim.crf.ser.gz}
+INPUT_ENCODING=${INPUT_ENCODING:-UTF-8}
+OUTPUT_ENCODING=${OUTPUT_ENCODING:-UTF-8}
+TOKENIZER_FACTORY=${TOKENIZER_FACTORY:-edu.stanford.nlp.process.WhitespaceTokenizer}
+
 cmd="java -mx700m -cp $scriptdir/stanford-ner.jar:$scriptdir/lib/\*"
-args=" -loadClassifier $scriptdir/classifiers/english.all.3class.distsim.crf.ser.gz  -inputEncoding UTF-8 -outputEncoding UTF-8 -tokenizerOptions untokenizable=noneDelete "
-args="$args -tokenizerFactory edu.stanford.nlp.process.WhitespaceTokenizer -encoding utf8 "
+args=" -loadClassifier $scriptdir/classifiers/$CLASSIFIER  -inputEncoding $INPUT_ENCODING -outputEncoding $OUTPUT_ENCODING -tokenizerOptions untokenizable=noneDelete "
+args="$args -tokenizerFactory $TOKENIZER_FACTORY -encoding utf8 "
 if [ "$#" -lt 1 ]; then
 	${cmd} edu.stanford.nlp.ie.NERServer ${args} -port 9001
 else
