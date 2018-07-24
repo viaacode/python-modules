@@ -1,0 +1,3 @@
+[submodule "ner/europeana"]
+	path = ner/europeana
+	url = https://github.com/EuropeanaNewspapers/ner-corpora.git

@@ -10,6 +10,7 @@ from nltk.sem.relextract import short2long
 logger = logging.getLogger(__name__)
 short2long = dict(LOC='LOCATION', ORG='ORGANIZATION', PER='PERSON', GEO='LOCATION')
 
+
 def normalize(txt):
     return re.sub(r"\s+", " ", re.sub(r"[^a-z ]", '', unidecode.unidecode(txt).lower()))
 
@@ -31,7 +32,7 @@ class NER:
 
 
 class NERFactory:
-    KNOWN_TAGGERS = ('StanfordNER', 'GMBNER', 'StanfordNERClient')
+    KNOWN_TAGGERS = ('StanfordNER', 'TrainedNER', 'StanfordNERClient')
 
     def __init__(self, config=None):
         self.config = Config(config, 'ner')

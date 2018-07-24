@@ -28,6 +28,9 @@ class StanfordNERClient(NER):
             return self._run(text)
         except ConnectionResetError:
             self.connect()
+        except ConnectionRefusedError:
+            raise ConnectionRefusedError(
+                "Connection refused, is the server running at %s:%d? Check run_stanford.sh..." % (self.host, self.port))
         return self._run(text)
 
     def _run(self, text):
