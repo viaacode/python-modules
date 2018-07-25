@@ -38,7 +38,7 @@ class AltoRoot(Alto):
         match = re.search(r'\{([^}]+)\}', str(self.xml.tag))
 
         if not match:
-            raise IndexError("No namespace found")
+            raise IndexError("No namespace found: %s" % self.xml.tag)
 
         self.xmlns = match.group(1)
 
@@ -61,7 +61,6 @@ class AltoElement(Alto):
 
 
 class AltoPage(AltoElement):
-
     def __init__(self, xml, xmlns):
         super().__init__(xml, xmlns)
         _ = xml.attrib

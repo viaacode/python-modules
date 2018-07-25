@@ -20,11 +20,12 @@ import time
 import json
 from . import alto
 from .config import Config
-from .decorators import classcache
+from .decorators import classcache, memoize
 from .cache import LocalCacher
 from PIL import Image, ImageDraw
 from io import BytesIO
 from xml.etree import ElementTree
+from .oai import OAI
 
 logger = logging.getLogger(__name__)
 
@@ -77,10 +78,9 @@ class MediaHaven:
         return self
 
     def oai(self):
-        from sickle import Sickle
         _ = self.config
         url = '%s://%s:%s%s' % (_['protocol'], _['host'], str(_['port']), _['oai_path'])
-        return Sickle(url, auth=(_['user'], _['pass']))
+        return OAI(url, auth=(_['user'], _['pass']))
 
     def refresh_token(self):
         """Fetch a new token based on the user/pass combination of config
@@ -97,7 +97,7 @@ class MediaHaven:
     @staticmethod
     def _validate_response(r):
         if r.status_code < 200 or r.status_code >= 300:
-            logger.warning("Wrong status code %d: %s " % (r.status_code, r.text))
+            logger.warning("Wrong status code %d: %s ", r.status_code, r.text)
             raise MediaHavenException("Wrong status code %d: %s " % (r.status_code, r.text))
 
     def call_absolute(self, url, params=None, method=None, raw_response=False):
@@ -108,6 +108,7 @@ class MediaHaven:
             if not self.tokenText:
                 self.refresh_token()
             res = getattr(req, method)(url, headers={'Authorization': self.tokenText}, params=params)
+            logger.debug("HTTP %s %s with params %s returns status code %d", method, url, params, res.status_code)
             return res
 
         r = do_call()
@@ -124,6 +125,7 @@ class MediaHaven:
         """
         return self.call_absolute(self.URL + url, *args, **kwargs)
 
+    @classcache
     def one(self, q=None, **kwargs):
         """Execute a mediahaven search query, return first result (or None)
         """
@@ -171,29 +173,27 @@ class MediaHaven:
     def export(self, media_object_id, reason=None):
         """Export a file
         """
-        params = { "exportReason": reason } if reason else None
+        params = {"exportReason": reason} if reason else None
         res = self.media(media_object_id, 'export', method='post', raw_response=True, params=params)
         return Export(self, res.headers['Location'], res.json())
 
-    @classcache
-    def get_alto(self, pid, max_timeout=None):
-        logger.debug('getting alto for %s ' % pid)
-        res = self.search('+(originalFileName:%s_alto.xml)' % pid)
+    def get_alto_location(self, media_object_id, rights_owner):
+        logger.debug("Try getting alto by location: %s %s", media_object_id, rights_owner)
+        return 'http://archief-media.viaa.be/viaa/MOB/%s/%s/%s.xml' % \
+               (rights_owner.replace(' ', '').upper(), media_object_id, media_object_id)
 
-        if len(res) == 0:
-            logger.warning('Expected 1 result for %s, got none' % pid)
-            return None
+    def get_alto_location_oai(self, fragment_id):
+        logger.debug("Try getting alto by oai: %s", fragment_id)
+        metadata = self.oai().GetRecord(identifier='umid:%s' % fragment_id, metadataPrefix='mets').metadata
+        return metadata['mets']['fileSec']['fileGrp']['file'][0]['FLocat']['@href']
 
-        if len(res) > 1:
-            logger.warning('Expected 1 result for %s, gotten %d' % (pid, len(res)))
-            raise MediaHavenException("Expected only one result")
-
-        res = next(res)
-        export = self.export(res['mediaObjectId'])
+    def get_alto_location_export(self, media_object_id, max_timeout=None):
+        logger.debug("Try getting alto by mediahaven export: %s", media_object_id)
+        export = self.export(media_object_id)
         if max_timeout is None:
             max_timeout = 15
         repeats = max_timeout * 10
-        logger.debug("Get export for %s" % res['mediaObjectId'])
+        logger.debug("Get export for %s", media_object_id)
         while repeats > 0 and not export.is_ready():
             repeats -= 1
             time.sleep(0.1)
@@ -208,7 +208,45 @@ class MediaHaven:
             logger.warning("Couldn't get files. Length: %s", 'None' if files is None else str(len(files)))
             raise MediaHavenException("Couldn't get files...")
 
-        return alto.AltoRoot(req.get(files[0]).content)
+        return files[0]
+
+    @classcache
+    def get_alto(self, pid, max_timeout=None):
+        cp = [val for val in self.one('+(externalId:%s)' % pid)['mdProperties'] if val['attribute'] == 'CP'][0]['value']
+        logger.debug('getting alto for %s', pid)
+        res = self.search('+(originalFileName:%s_alto.xml)' % pid)
+
+        if len(res) == 0:
+            logger.warning('Expected 1 result for %s, got none', pid)
+            return None
+
+        if len(res) > 1:
+            logger.warning('Expected 1 result for %s, gotten %d', pid, len(res))
+            raise MediaHavenException("Expected only one result")
+
+        res = next(res)
+
+        attempt = 0
+        attempts = [
+            lambda: self.get_alto_location(res['mediaObjectId'], cp),
+            lambda: self.get_alto_location_oai(res['fragmentId']),
+            lambda: self.get_alto_location_export(res['mediaObjectId'], max_timeout=max_timeout)
+        ]
+
+        while attempt <= len(attempts):
+            try:
+                attempt += 1
+                file = attempts[attempt-1]()
+                result = req.get(file)
+                if result.status_code != req.codes.ok:
+                    msg = 'Attempt #%d: incorrect status code %d for pid "%s", export url: %s' % \
+                          (attempt, result.status_code, pid, file)
+                    raise MediaHavenException(msg)
+                logger.debug('Gotten alto with attempt #%d: %s' % (attempt, file))
+                return alto.AltoRoot(result.content)
+            except Exception as e:
+                logger.error(e)
+        raise MediaHavenException("Could not load alto file after %d attempts" % attempt)
 
     def fragments(self, media_object_id):
         """Get fragments for a media object
@@ -240,13 +278,11 @@ class PreviewImage:
         if not self.closed:
             raise IOError("File already open")
 
-        items = self.mh.search('+(externalId:%s)' % self.pid)
+        item = self.mh.one('+(externalId:%s)' % self.pid)
         self.closed = False
-        if len(items) == 0:
+        if len(item) == 0:
             return None
-        if len(items) > 1:
-            raise MediaHavenException("Expected only 1 result")
-        self.meta = next(items)
+        self.meta = item
         self.image = Image.open(BytesIO(req.get(self.meta['previewImagePath']).content))
         return self
 
@@ -278,11 +314,11 @@ class PreviewImage:
         scale_y = im.size[1] / h
         padding = 0
         canvas = ImageDraw.Draw(im)
-        logger.debug('page: %dx%d, image: %dx%d, scale: %1.2fx%1.2f' % (w, h, im.size[0], im.size[1], scale_x, scale_y))
+        logger.debug('page: %dx%d, image: %dx%d, scale: %1.2fx%1.2f', w, h, im.size[0], im.size[1], scale_x, scale_y)
 
         for rect in p.words():
             if rect.x is None:
-                logger.warning("Rect with missing x: %s" % rect.__dict__)
+                logger.warning("Rect with missing x: %s", rect.__dict__)
                 continue
             x0 = int(rect.x) * scale_x - padding
             y0 = int(rect.y) * scale_y - padding
@@ -367,7 +403,7 @@ class PreviewImage:
         scale_x = w / page_w
         scale_y = h / page_h
 
-        logger.debug('Scaling, page: %dx%d vs img %dx%d => %3.2fx%3.2f' % (page_w, page_h, w, h, scale_x, scale_y))
+        logger.debug('Scaling, page: %dx%d vs img %dx%d => %3.2fx%3.2f', page_w, page_h, w, h, scale_x, scale_y)
 
         for word in coords['words']:
             rect = word['extent'].scale(scale_x, scale_y)
@@ -432,6 +468,7 @@ class Export:
         data = []
         for file in files:
             res = req.get(file)
+            logger.debug(res)
             if res.status_code != req.codes.ok:
                 raise MediaHavenException("Invalid status code %d" % res.status_code)
             data.append(res.content)

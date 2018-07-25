@@ -41,7 +41,7 @@ class NERFactory:
         if class_name is None and 'class_name' in self.config:
             class_name = self.config['class_name']
             if class_name not in NERFactory.KNOWN_TAGGERS:
-                logger.info("Class '%s' is not known to NERFactory" % class_name)
+                logger.info("Class '%s' is not known to NERFactory", class_name)
             if 'args' in self.config:
                 print(self.config['args'])
                 args = json.loads(self.config['args'])

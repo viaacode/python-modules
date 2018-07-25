@@ -1,12 +1,17 @@
 import logging
 
-from . import cache
+from .cache import LocalCacher
 
 logging.basicConfig()
 _log = logging.getLogger(__name__)
 _log.propagate = True
-_log.setLevel(logging.DEBUG)
+# _log.setLevel(logging.DEBUG)
 _log = _log.debug
+
+
+def _get_cache_key(*args, **kwargs):
+    _log(args)
+    return '||'.join(('|'.join(args), '|'.join(kwargs.items())))
 
 
 def memoize(f, cacher=None):
@@ -15,21 +20,19 @@ def memoize(f, cacher=None):
     def someFunc():
     """
     if cacher is None:
-        cacher = cache.DictCacher()
-
-    def get_cache_key(*args, **kwargs):
-        return str((args, tuple(kwargs.items())))
+        cacher = LocalCacher(max_items=500)
 
     def _cacher(*args, **kwargs):
         global _log
-        x = get_cache_key(*args, **kwargs)
+        x = _get_cache_key(*args, **kwargs)
+
         if x in cacher:
-            res = cacher[x]
-            _log('%s: gotten: %s' % (memoize.__name__, f.__name__, str(x)))
-        else:
-            res = f(*args, **kwargs)
-            _log('%s: set: %s' % (memoize.__name__, f.__name__, str(x)))
-            cacher[x] = res
+            _log('%s(%s): got: %s' % (memoize.__name__, f.__name__, str(x)))
+            return cacher[x]
+
+        res = f(*args, **kwargs)
+        _log('%s(%s): set: %s' % (memoize.__name__, f.__name__, str(x)))
+        cacher[x] = res
         return res
 
     return _cacher
@@ -62,22 +65,20 @@ def classcache(f):
         @classcache
         def someFunc(self):
     """
-    def get_cache_key(*args, **kwargs):
-        return args, tuple(kwargs.items())
-
     def _cacher(*args, **kwargs):
         global _log
         cacher = args[0].get_cacher()
         if not cacher:
             cacher = cache.DummyCacher()
-        x = get_cache_key(*args[1:], **kwargs)
+        x = _get_cache_key(f.__name__, *args[1:], **kwargs)
+
         if x in cacher:
-            res = cacher[x]
-            _log('%s(%s): get: %s' % (classcache.__name__, f.__name__, str(x)))
-        else:
-            res = f(*args, **kwargs)
-            _log('%s(%s): set: %s' % (classcache.__name__, f.__name__, str(x)))
-            cacher[x] = res
+            _log('%s(%s): got: %s' % (classcache.__name__, f.__name__, str(x)))
+            return cacher[x]
+
+        res = f(*args, **kwargs)
+        _log('%s(%s): set: %s' % (classcache.__name__, f.__name__, str(x)))
+        cacher[x] = res
         return res
 
     return _cacher

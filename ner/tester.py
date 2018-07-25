@@ -128,8 +128,8 @@ class Tester:
                 if len(tags) != ntags:
                     tags = Tester.fix_tags_counts(tags, sample_tags)
                     if len(tags) != ntags:
-                        logger.error("Samples are of different size for %s (%d vs %d): \nTAGGER:   %s\nORIGINAL: %s" %
-                                     (cls, len(tags), ntags, tags, sample_tags))
+                        logger.error("Samples are of different size for %s (%d vs %d): \nTAGGER:   %s\nORIGINAL: %s",
+                                     cls, len(tags), ntags, tags, sample_tags)
                         continue
 
                 tag_types = [tag[1] for tag in tags]
