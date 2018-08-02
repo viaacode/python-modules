@@ -140,6 +140,9 @@ class MediaHaven:
         res = self.call('/resources/media/', params)
         if not res:
             return None
+        if res['totalNrOfResults'] == 0:
+            logger.debug('No results found for params %s', params)
+            return None
         return res['mediaDataList'][0]
 
     def search(self, q, start_index=0, nr_of_results=25):

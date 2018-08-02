@@ -9,6 +9,14 @@ class Corpus:
         raise NotImplementedError("Needs to be implemented")
 
 
+class Europeana:
+    def __init__(self, path=None):
+        if path is None:
+            path = os.path.dirname(os.path.realpath(__file__)) + '/europeana/'
+        self.path = path
+        # TODO
+
+
 # based on https://nlpforhackers.io/named-entity-extraction/
 class GMB(Corpus):
     def __init__(self, path=None):
