@@ -94,7 +94,7 @@ class Tester:
         return fixed
 
     def test(self, amount=500):
-        known_tags = NER.allowed_tags
+        # known_tags = NER.allowed_tags
         samples = self.sampler.test_names(amount)
 
         if amount == 0:
@@ -103,7 +103,7 @@ class Tester:
             amount = len(samples)
 
         totals = [defaultdict(lambda: 0) for i in range(len(self.taggers))]
-        stats = [defaultdict(lambda: defaultdict(lambda: 0)) for i in range(len(self.taggers))]
+        # stats = [defaultdict(lambda: defaultdict(lambda: 0)) for i in range(len(self.taggers))]
 
         total_tags = 0
         progress = tqdm(total=amount*len(self.taggers))
@@ -136,28 +136,28 @@ class Tester:
                 zipped = list(zip(tag_types, orig_tags))
                 sames = sum([tag[0] == tag[1] for tag in zipped])
 
-                for tags in zipped:
-                    if tags[0] in known_tags:
-                        if tags[0] == tags[1]:
-                            stats[n][tags[0]]['tp'] += 1
-                        else:
-                            stats[n][tags[0]]['fp'] += 1
-                    elif tags[1] in known_tags:
-                        stats[n][tags[1]]['fn'] += 1
-
-                    for tag in known_tags:
-                        if tag != tags[1]:
-                            stats[n][tag]['tn'] += 1
+                # for tags in zipped:
+                #     if tags[0] in known_tags:
+                #         if tags[0] == tags[1]:
+                #             stats[n][tags[0]]['tp'] += 1
+                #         else:
+                #             stats[n][tags[0]]['fp'] += 1
+                #     elif tags[1] in known_tags:
+                #         stats[n][tags[1]]['fn'] += 1
+                #
+                #     for tag in known_tags:
+                #         if tag != tags[1]:
+                #             stats[n][tag]['tn'] += 1
 
                 totals[n]['same'] += sames
                 totals[n]['time'] += elapsed
                 full_predict_tags[n].extend(tag_types)
 
-        Stats = namedtuple('Stats', ['accuracy', 'time', 'basic_stats', 'total_checked', 'confusion_matrix'])
+        Stats = namedtuple('Stats', ['accuracy', 'time', 'total_checked', 'confusion_matrix'])
         return [Stats(
                     t['same'] / total_tags * 100,
                     t['time'],
-                    stats[i],
+                    # stats[i],
                     total_tags,
                     ConfusionMatrix(actual_vector=full_orig_tags, predict_vector=full_predict_tags[i])
                 ) for i, t in enumerate(totals)]
