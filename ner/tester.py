@@ -1,6 +1,5 @@
 from pythonmodules.ner.corpora import GMB
-from pythonmodules.ner import NER, NERFactory, simplify_bio_tags
-from itertools import chain
+from pythonmodules.ner import NER, NERFactory
 from collections import namedtuple, defaultdict
 import logging
 from tqdm import tqdm
@@ -11,16 +10,18 @@ logger = logging.getLogger(__name__)
 
 
 class Samples:
-    def __init__(self):
+    def __init__(self, corpus, test_pct=None):
         self.data = None
-        self.gmb = GMB()
+        self.corpus = corpus
+        self.test_pct = test_pct if test_pct is not None else 0.1
 
     def init(self):
         if self.data is not None:
             return
-        reader = self.gmb.read_gmb()
+        reader = self.corpus.read_nltk()
         data = list(reader)
-        self.data = (data[:int(len(data) * 0.1)], data[int(len(data) * 0.1):])
+        splitpoint = int(len(data) * self.test_pct)
+        self.data = (data[:splitpoint], data[splitpoint:])
 
     def training(self):
         if self.data is None:
@@ -30,22 +31,9 @@ class Samples:
     def test(self, amount=500):
         # optim: no need to read all the data if we only using test
         if self.data is None:
-            reader = self.gmb.read_gmb()
+            reader = self.corpus.read_nltk()
             return (next(reader) for i in range(amount))
         return self.data[0][:amount]
-
-    def test_names(self, amount=500):
-        if amount == 0:
-            self.init()
-            data = chain(*self.data)
-        else:
-            data = self.test(amount)
-
-        Phrase = namedtuple('Phrase', ['text', 'tags'])
-
-        for line in data:
-            yield Phrase(' '. join([d[0][0] for d in line]),
-                         list(simplify_bio_tags([(d[0][0], d[0][1], d[1]) for d in line])))
 
 
 class Tester:
@@ -57,8 +45,7 @@ class Tester:
             taggers = [taggers]
 
         self.taggers = [NERFactory().get(tagger) if type(tagger) is str else tagger for tagger in taggers]
-        logger.debug(str(self.taggers))
-        self.sampler = Samples()
+        self.corpus = GMB()
 
     @staticmethod
     def filter_tags(tags):
@@ -95,9 +82,10 @@ class Tester:
 
     def test(self, amount=500):
         # known_tags = NER.allowed_tags
-        samples = self.sampler.test_names(amount)
+        samples = self.corpus.read_entities()
 
         if amount == 0:
+            logger.info("Loading the entire corpus in memory, this may take a while...")
             # preload all samples to have an amount available for progress indicator
             samples = list(samples)
             amount = len(samples)
@@ -112,7 +100,9 @@ class Tester:
         full_predict_tags = [[] for i in range(len(self.taggers))]
 
         for sample_index, sample in enumerate(samples):
-            sample_tags = Tester.filter_tags(sample.tags)
+            if amount and sample_index >= amount:
+                break
+            sample_tags = Tester.filter_tags(sample.entities)
             orig_tags = [tag[1] for tag in sample_tags]
             ntags = len(orig_tags)
             total_tags += ntags
@@ -121,7 +111,7 @@ class Tester:
                 progress.update()
                 cls = type(tagger).__name__
                 timer.restart()
-                tags = Tester.filter_tags(tagger.tag(sample.text))
+                tags = Tester.filter_tags(tagger.tag(sample.phrase))
                 elapsed = timer.elapsed()
 
                 # check and do a naive attempt to fix different tag lengths

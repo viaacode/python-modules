@@ -4,7 +4,6 @@ import unidecode
 import re
 import json
 import logging
-from nltk.sem.relextract import short2long
 
 
 logger = logging.getLogger(__name__)
@@ -24,6 +23,8 @@ class NER:
     PERSON = 'PERSON'
     ORGANISATION = 'ORGANISATION'
     LOCATION = 'LOCATION'
+
+    ignored_tags = (ORGANISATION, 'ORGANIZATION')
 
     allowed_tags = (PERSON,
                     # ORGANISATION,
@@ -58,7 +59,6 @@ class NER:
             yield val
 
 
-
 class NERFactory:
     KNOWN_TAGGERS = ('StanfordNER', 'TrainedNER', 'StanfordNERClient')
 
@@ -81,12 +81,3 @@ class NERFactory:
         return c(*args, **kwargs)
 
 
-def simplify_bio_tags(tags):
-    for word, pos, bio in tags:
-        try:
-            bio = short2long[bio[2:].upper()]
-            if bio not in NER.allowed_tags:
-                bio = 'O'
-        except KeyError:
-            bio = 'O'
-        yield (word, bio)
