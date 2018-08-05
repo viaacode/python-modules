@@ -25,10 +25,38 @@ class NER:
     ORGANISATION = 'ORGANISATION'
     LOCATION = 'LOCATION'
 
-    allowed_tags = (PERSON, ORGANISATION, LOCATION)
+    allowed_tags = (PERSON,
+                    # ORGANISATION,
+                    LOCATION)
 
     def tag(self, text, *args, **kwargs):
         raise NotImplemented()
+
+    @staticmethod
+    def filter_tags(tags):
+        return ((tag[0], tag[1] if tag[1] in NER.allowed_tags else 'O') for tag in tags)
+
+    @staticmethod
+    def group_tagged_entities(tokens, buffer_size=20):
+        l = len(tokens)
+        idx = 0
+        while idx < l:
+            token = tokens[idx]
+            text = token[0]
+            start_idx = idx
+            while idx + 1 < l:
+                idx += 1
+                if tokens[idx][1] != token[1]:
+                    break
+                text += ' ' + tokens[idx][0]
+            val = {
+                'type': token[1],
+                'value': text
+            }
+            if buffer_size:
+                val['context'] = ' '.join([t[0] for t in tokens[start_idx - buffer_size:idx + buffer_size]])
+            yield val
+
 
 
 class NERFactory:

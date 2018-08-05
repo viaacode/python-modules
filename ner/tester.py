@@ -67,7 +67,7 @@ class Tester:
         :param tags:
         :return:
         """
-        return [s for s in tags if s[0] != '``' and (len(s[0]) != 1 or s[0] not in '\'". ,;!%')]
+        return list(NER.filter_tags([s for s in tags if s[0] != '``' and (len(s[0]) != 1 or s[0] not in '\'". ,;!%')]))
 
     @staticmethod
     def fix_tags_counts(tags, correct_tags):
