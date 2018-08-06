@@ -1,5 +1,4 @@
-from pythonmodules.ner import NER
-from pythonmodules.ner.corpora import GMB
+from pythonmodules.ner import NER, bio_to_entity_name
 import pickle
 from nltk import pos_tag, word_tokenize
 import logging
@@ -15,5 +14,5 @@ class TrainedNER(NER):
 
     def tag(self, text, language=None, **kwargs):
         tags = self.chunker.parse(pos_tag(word_tokenize(text)))
-        return ((word, GMB.simplify_bio_tag(bio)) for word, pos, bio in tags)
+        return ((word, bio_to_entity_name(bio)) for word, pos, bio in tags)
 

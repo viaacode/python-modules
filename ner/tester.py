@@ -1,4 +1,4 @@
-from pythonmodules.ner.corpora import GMB
+import pythonmodules.ner.corpora as corpora
 from pythonmodules.ner import NER, NERFactory
 from collections import namedtuple, defaultdict
 import logging
@@ -7,6 +7,7 @@ from pythonmodules.profiling import timeit
 from pycm import ConfusionMatrix
 
 logger = logging.getLogger(__name__)
+logger.propagate = True
 
 
 class Samples:
@@ -37,7 +38,7 @@ class Samples:
 
 
 class Tester:
-    def __init__(self, taggers=None):
+    def __init__(self, taggers=None, corpus=None):
         if taggers is None:
             taggers = NERFactory().get()
 
@@ -45,7 +46,9 @@ class Tester:
             taggers = [taggers]
 
         self.taggers = [NERFactory().get(tagger) if type(tagger) is str else tagger for tagger in taggers]
-        self.corpus = GMB()
+        if corpus is None:
+            corpus = corpora.Europeana()
+        self.corpus = corpus
 
     @staticmethod
     def filter_tags(tags):

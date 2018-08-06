@@ -1,9 +1,13 @@
 import os
 from collections import namedtuple
 import logging
-from . import NER, short2long
+from . import bio_to_entity_name
 
 logger = logging.getLogger(__name__)
+
+
+EntityResults = namedtuple('EntityResults', ('phrase', 'entities'))
+Entity = namedtuple('Entity', ('text', 'entity'))
 
 
 class Corpus:
@@ -15,15 +19,56 @@ class Corpus:
 
 
 class Europeana:
-    def __init__(self, path=None):
+    """
+    After analysis: yikes, Europeana manual corpus annotation is quite poor...
+    DON'T use it for evaluation!
+    """
+    corpora = {
+        'nl':  ('enp_NL.kb.bio/enp_NL.kb.bio',),
+        'de': ('enp_DE.lft.bio/enp_DE.lft.bio', 'enp_DE.onb.bio/enp_DE.onb.bio'),
+        'fr': ('enp_FR.bnf.bio/enp_FR.bnf.bio', )
+    }
+
+    phrase_separators = '.?!'
+
+    def __init__(self, path=None, languages=None):
         if path is None:
             path = os.path.dirname(os.path.realpath(__file__)) + '/europeana/'
         self.path = path
-        # TODO
 
+        if languages is None:
+            languages = self.corpora.keys()
+        elif type(languages) is str:
+            languages = [languages]
 
-EntityResults = namedtuple('Bio', ('phrase', 'entities'))
-Entity = namedtuple('Entity', ('text', 'entity'))
+        self.languages = languages
+
+    def read_entities(self):
+        for language in self.languages:
+            for corpus in self.corpora[language]:
+                with open(self.path + corpus) as file:
+                    entities = []
+                    for line in file.readlines():
+                        if line[:4] == '<-- ':
+                            continue
+                        line = line.rstrip('\n\r')
+                        if line == '? O':
+                            phrase = ' '.join([entity.text for entity in entities])
+                            yield EntityResults(phrase=phrase, entities=entities)
+                            entities = []
+                        else:
+                            items = line.split(' ')
+                            if len(items) < 2:
+                                items.append('O')
+                            elif len(items) > 2:
+                                logger.warning('Invalid format "%s"', line)
+                                continue
+                            items[1] = bio_to_entity_name(items[1])
+                            entity = Entity(*items)
+                            entities.append(entity)
+                    if len(entities):
+                        phrase = ' '.join([entity.text for entity in entities])
+                        yield EntityResults(phrase=phrase, entities=entities)
 
 
 # based on https://nlpforhackers.io/named-entity-extraction/
@@ -37,20 +82,9 @@ class GMB(Corpus):
         for phrase in self.read_nltk():
             entity_results = EntityResults(
                 phrase=' '.join([word[0][0] for word in phrase]),
-                entities=[Entity(text=word[0][0], entity=self.simplify_bio_tag(word[1])) for word in phrase]
+                entities=[Entity(text=word[0][0], entity=bio_to_entity_name(word[1])) for word in phrase]
             )
             yield entity_results
-
-    @staticmethod
-    def simplify_bio_tag(bio):
-        try:
-            bio = short2long[bio[2:].upper()]
-            if bio not in NER.allowed_tags and bio not in NER.ignored_tags:
-                logger.debug('Unknown NER tag "%s"' % bio)
-                bio = 'O'
-        except KeyError:
-            bio = 'O'
-        return bio
 
     def read_sentence(self):
         for root, dirs, files in os.walk(self.path):

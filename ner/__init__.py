@@ -7,7 +7,33 @@ import logging
 
 
 logger = logging.getLogger(__name__)
-short2long = dict(LOC='LOCATION', ORG='ORGANIZATION', PER='PERSON', GEO='LOCATION')
+short2long = dict(
+    LOC='LOCATION',
+    ORG='ORGANIZATION',
+    PER='PERSON',
+    GEO='LOCATION',
+    TIM='TIME',
+    ART='ARTIFACT',
+    GPE='GEOPOLITICALENTITY',
+    EVE='EVENT',
+    NAT='NATURALEVENT'
+)
+
+
+def bio_to_entity_name(bio_tag):
+    if bio_tag == 'O':
+        return 'O'
+
+    try:
+        bio = short2long[bio_tag[2:].upper()]
+        if bio in NER.ignored_tags:
+            return 'O'
+        if bio not in NER.allowed_tags:
+            raise KeyError(bio)
+        return bio
+    except KeyError:
+        logger.warning('Unknown NER tag "%s"' % bio_tag)
+        return 'O'
 
 
 def normalize(txt):
@@ -24,8 +50,6 @@ class NER:
     ORGANISATION = 'ORGANISATION'
     LOCATION = 'LOCATION'
 
-    ignored_tags = (ORGANISATION, 'ORGANIZATION')
-
     allowed_tags = (PERSON,
                     # ORGANISATION,
                     LOCATION)
@@ -35,6 +59,9 @@ class NER:
 
     @staticmethod
     def filter_tags(tags):
+        for tag in tags:
+            if tag[1] not in NER.allowed_tags and tag[1] not in NER.ignored_tags and tag[1] != 'O':
+                logger.warning('unknown tage "%s"' % tag[1])
         return ((tag[0], tag[1] if tag[1] in NER.allowed_tags else 'O') for tag in tags)
 
     @staticmethod
@@ -59,6 +86,9 @@ class NER:
             yield val
 
 
+NER.ignored_tags = [tag for tag in short2long.values() if tag not in NER.allowed_tags]
+
+
 class NERFactory:
     KNOWN_TAGGERS = ('StanfordNER', 'TrainedNER', 'StanfordNERClient')
 
@@ -71,7 +101,8 @@ class NERFactory:
             if class_name not in NERFactory.KNOWN_TAGGERS:
                 logger.info("Class '%s' is not known to NERFactory", class_name)
             if 'args' in self.config:
-                print(self.config['args'])
+                logger.debug('NERFactory args:')
+                logger.debug(self.config['args'])
                 args = json.loads(self.config['args'])
         if class_name is None:
             class_name = NERFactory.KNOWN_TAGGERS[0]
