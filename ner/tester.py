@@ -45,9 +45,18 @@ class Tester:
         if isinstance(taggers, (str, NER)):
             taggers = [taggers]
 
-        self.taggers = [NERFactory().get(tagger) if type(tagger) is str else tagger for tagger in taggers]
+        self.taggers = []
+        for tagger in taggers:
+            if type(tagger) is not str:
+                self.taggers.append(tagger)
+            else:
+                args = tagger.split(':')
+                tagger = args[0]
+                del args[0]
+                self.taggers.append(NERFactory().get(tagger, *args))
+
         if corpus is None:
-            corpus = corpora.Europeana()
+            corpus = corpora.GMB()
         self.corpus = corpus
 
     @staticmethod

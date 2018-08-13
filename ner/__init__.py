@@ -16,12 +16,36 @@ short2long = dict(
     ART='ARTIFACT',
     GPE='GEOPOLITICALENTITY',
     EVE='EVENT',
-    NAT='NATURALEVENT'
+    NAT='NATURALEVENT',
+    MISC='MISCELLANEOUS',
+    DATE='DATE',
+    TIME='Times smaller than a day',
+    PERCENT='PERCENT',
+    CARDINAL='CARDINAL',
+    ORDINAL='ORDINAL',
+    MONEY='MONEY',
+    LANGUAGE='LANGUAGE',
+    LAW='LAW',
+    WORK_OF_ART='WORKOFART',
+
+
+    # Nationalities or religious or political groups
+    NORP='NATIONALITY',
+    # Buildings, airports, highways, bridges, etc.
+    FAC='FACILITY',
+    FACILITY='FACILITY',
+    # Objects, vehicles, foods, etc. (not services)
+    PRODUCT='PRODUCT',
+    # Named hurricanes, battles, wars, sports events, etc.
+    EVENT='EVENT',
+    # Measurements, as of weight or distance
+    QUANTITY='QUANTITY',
+
 )
 
 
 def bio_to_entity_name(bio_tag):
-    if bio_tag == 'O':
+    if bio_tag == 'O' or bio_tag == '':
         return 'O'
 
     try:
@@ -90,8 +114,13 @@ NER.ignored_tags = [tag for tag in short2long.values() if tag not in NER.allowed
 
 
 class NERFactory:
-    KNOWN_TAGGERS = ('StanfordNER', 'TrainedNER', 'StanfordNERClient')
-
+    KNOWN_TAGGERS = (
+        'StanfordNER',
+        'TrainedNER',
+        'StanfordNERClient',
+        'SpacyNER'
+    )
+    
     def __init__(self, config=None):
         self.config = Config(config, 'ner')
 
