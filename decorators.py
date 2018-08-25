@@ -14,6 +14,35 @@ def _get_cache_key(*args, **kwargs):
     return '||'.join(('|'.join(args), '|'.join(kwargs.items())))
 
 
+def exception_redirect(new_exception_class, old_exception_class=Exception, logger=None):
+    """
+    Decorator to replace a given exception to another Exception class, with optional error logging.
+
+    >>>
+    >>> class MyException(Exception):
+    ...     pass
+    >>>
+    >>> @exception_redirect(MyException)
+    ... def test():
+    ...    raise Exception("test")
+    >>>
+    >>> test()
+    Traceback (most recent call last):
+    ...
+    MyException: test
+    """
+    def _decorator(func):
+        def catch_and_redirect_exception(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except old_exception_class as e:
+                if logger is not None:
+                    logger.error(e)
+                raise new_exception_class(e) from None
+        return catch_and_redirect_exception
+    return _decorator
+
+
 def memoize(f, cacher=None):
     """Usage:
     @memoize

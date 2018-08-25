@@ -7,7 +7,8 @@
 #   - oai_connection_url
 
 
-import requests as req
+import requests
+from requests.exceptions import ReadTimeout
 import logging
 import http.client as http_client
 from urllib.parse import quote_plus, urlparse
@@ -16,7 +17,7 @@ import time
 import json
 from . import alto
 from .config import Config
-from .decorators import classcache, memoize
+from .decorators import classcache, memoize, exception_redirect
 from .cache import LocalCacher
 from PIL import Image, ImageDraw
 from io import BytesIO
@@ -24,24 +25,6 @@ from xml.etree import ElementTree
 from .oai import OAI
 
 logger = logging.getLogger(__name__)
-
-# quick hack to always use proxy
-# class req:
-#     @staticmethod
-#     def get(*args, **kwargs):
-#         kwargs['proxies'] = {
-#           'http': 'proxy:80',
-#           'https': 'proxy:80'
-#         }
-#         return requests.get(*args, **kwargs)
-#
-#     @staticmethod
-#     def post(*args, **kwargs):
-#         kwargs['proxies'] = {
-#           'http': 'proxy:80',
-#           'https': 'proxy:80'
-#         }
-#         return requests.post(*args, **kwargs)
 
 
 def _remove_user_pass_from_url(url):
@@ -54,6 +37,26 @@ class MediaHavenException(Exception):
     pass
 
 
+class MediaHavenTimeoutException(MediaHavenException):
+    pass
+
+
+class MediaHavenRequest:
+    """
+    Automagically replaces the ReadTime Exception with MediaHavenTimeoutException
+    """
+    exception_wrapper = exception_redirect(MediaHavenTimeoutException, ReadTimeout, logger)
+
+    def __getattr__(self, item):
+        func = getattr(requests, item)
+        # quick hack to always use proxy:
+        # func = functools.partial(func, proxies={'http': 'proxy:80', 'https': 'proxy:80'})
+        return MediaHavenRequest.exception_wrapper(func)
+
+
+req = MediaHavenRequest()
+
+
 class MediaHaven:
     def __init__(self, config=None):
         self.config = Config(config, 'mediahaven')
@@ -61,12 +64,16 @@ class MediaHaven:
         self.url = urlparse(_['rest_connection_url'])
         self.token = None
         self.tokenText = None
+        self.timeout = None
+
+        if not self.config.is_false('timeout'):
+            self.timeout = int(_['timeout'])
 
         self.__cache = LocalCacher(500)
         if 'cache' in _:
             self.__cache = _['cache']
 
-        if 'debug' in self.config and self.config['debug'] and self.config['debug'] not in ['no', 'false', 'off', '0']:
+        if not self.config.is_false('debug'):
             logging.basicConfig()
             logger.setLevel(logging.DEBUG)
             logger.propagate = True
@@ -90,7 +97,8 @@ class MediaHaven:
         logger.info('Refreshing oauth access token (username %s)', self.url.username)
         r = req.post('%s%s' % (_remove_user_pass_from_url(self.url), '/resources/oauth/access_token'),
                      auth=(self.url.username, self.url.password),
-                     data={'grant_type': 'password'})
+                     data={'grant_type': 'password'},
+                     timeout=self.timeout)
         self._validate_response(r)
         self.token = r.json()
         self.tokenText = self.token['token_type'] + ' ' + self.token['access_token']
@@ -109,7 +117,8 @@ class MediaHaven:
         def do_call():
             if not self.tokenText:
                 self.refresh_token()
-            res = getattr(req, method)(url, headers={'Authorization': self.tokenText}, params=params)
+            res = getattr(req, method)(url, headers={'Authorization': self.tokenText},
+                                       timeout=self.timeout, params=params)
             logger.debug("HTTP %s %s with params %s returns status code %d", method, url, params, res.status_code)
             return res
 

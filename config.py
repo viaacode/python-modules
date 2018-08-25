@@ -26,3 +26,6 @@ class Config:
         if not self.__contains__(key):
             raise IndexError("Invalid item '%s'" % key)
         return self.config[key]
+
+    def is_false(self, key):
+        return key not in self.config or self.config[key] in ['', 'false', '0', 'none', 'off']
