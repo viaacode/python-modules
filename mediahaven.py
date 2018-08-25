@@ -3,18 +3,14 @@
 # By default it will read config.ini from the current working directory and
 # use that config.
 # You can also use a dict with keys:
-#    - user
-#    - pass
-#    - host (eg. archief-qas.viaa.be)
-#    - port (eg. 443)
-#    - base_path (eg. /mediahaven-rest-api)
-#    - protocol (eg. 'https')
+#   - rest_connection_url
+#   - oai_connection_url
 
 
 import requests as req
 import logging
 import http.client as http_client
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 import datetime
 import time
 import json
@@ -48,6 +44,12 @@ logger = logging.getLogger(__name__)
 #         return requests.post(*args, **kwargs)
 
 
+def _remove_user_pass_from_url(url):
+    if type(url) is str:
+        url = urlparse(url)
+    return url._replace(netloc="{}:{}".format(url.hostname, url.port)).geturl()
+
+
 class MediaHavenException(Exception):
     pass
 
@@ -56,7 +58,7 @@ class MediaHaven:
     def __init__(self, config=None):
         self.config = Config(config, 'mediahaven')
         _ = self.config
-        self.URL = '%s://%s:%s%s' % (_['protocol'], _['host'], str(_['port']), _['base_path'])
+        self.url = urlparse(_['rest_connection_url'])
         self.token = None
         self.tokenText = None
 
@@ -79,15 +81,15 @@ class MediaHaven:
 
     def oai(self):
         _ = self.config
-        url = '%s://%s:%s%s' % (_['protocol'], _['host'], str(_['port']), _['oai_path'])
-        return OAI(url, auth=(_['user'], _['pass']))
+        url = urlparse(_['oai_connection_url'])
+        return OAI(_remove_user_pass_from_url(url), auth=(url.username, url.password))
 
     def refresh_token(self):
         """Fetch a new token based on the user/pass combination of config
         """
-        conf = self.config
-        r = req.post(self.URL + '/resources/oauth/access_token',
-                     auth=(conf['user'], conf['pass']),
+        logger.info('Refreshing oauth access token (username %s)', self.url.username)
+        r = req.post('%s%s' % (_remove_user_pass_from_url(self.url), '/resources/oauth/access_token'),
+                     auth=(self.url.username, self.url.password),
                      data={'grant_type': 'password'})
         self._validate_response(r)
         self.token = r.json()
@@ -123,7 +125,7 @@ class MediaHaven:
     def call(self, url, *args, **kwargs):
         """Execute a call to MediaHaven server
         """
-        return self.call_absolute(self.URL + url, *args, **kwargs)
+        return self.call_absolute(_remove_user_pass_from_url(self.url) + url, *args, **kwargs)
 
     @classcache
     def one(self, q=None, **kwargs):
@@ -180,6 +182,7 @@ class MediaHaven:
         res = self.media(media_object_id, 'export', method='post', raw_response=True, params=params)
         return Export(self, res.headers['Location'], res.json())
 
+    @staticmethod
     def get_alto_location(self, media_object_id, rights_owner):
         logger.debug("Try getting alto by location: %s %s", media_object_id, rights_owner)
         return 'http://archief-media.viaa.be/viaa/MOB/%s/%s/%s.xml' % \
