@@ -2,7 +2,6 @@ import logging
 
 from .cache import LocalCacher
 
-logging.basicConfig()
 _log = logging.getLogger(__name__)
 # _log.propagate = True
 # _log.setLevel(logging.DEBUG)
@@ -12,6 +11,28 @@ _log = _log.debug
 def _get_cache_key(*args, **kwargs):
     _log(args)
     return '||'.join(('|'.join(args), '|'.join(kwargs.items())))
+
+
+def log_call(logger: logging.Logger, log_level=logging.DEBUG):
+    """
+    Decorator to log all calls to decorated function to given logger
+
+    >>> import logging, sys
+    >>> logging.basicConfig(stream=sys.stdout, format='%(levelname)s:%(name)s: %(message)s')
+    >>> logger = logging.getLogger('logger_name')
+    >>> logger.setLevel(logging.DEBUG)
+    >>> @log_call(logger, logging.WARNING)
+    ... def test(*args, **kwargs):
+    ...     pass
+    >>> test('arg1', arg2='someval', arg3='someotherval')
+    WARNING:logger_name: test(arg1, 'arg2': 'someval', 'arg3': 'someotherval')
+    """
+    def _log_call(func: callable):
+        def _(*args, **kwargs):
+            logger.log(log_level, '%s(%s, %s)', func.__name__, ', '.join(args), [k + '=' + str(kwargs[k]) for k in kwargs])
+            return func(*args, **kwargs)
+        return _
+    return _log_call
 
 
 def exception_redirect(new_exception_class, old_exception_class=Exception, logger=None):

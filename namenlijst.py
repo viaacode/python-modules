@@ -3,6 +3,7 @@ from .config import Config
 
 import logging
 import http.client as http_client
+from urllib.parse import urlparse
 
 
 class Namenlijst:
@@ -15,13 +16,17 @@ class Namenlijst:
         if type(log_http_requests) == bool:
             self.set_log_http_requests(log_http_requests)
 
-        self.__jsonrpc = Server(self.__config['api_host'])
+        url = urlparse(self.__config['api_host'])
+        self._user = url.username
+        self._passwd = url.password
+        url = url._replace(netloc="{}:{}".format(url.hostname, url.port)).geturl()
+        self.__jsonrpc = Server(url)
 
     # def findPersonAdvanced(query = None):
     # todo
 
     def refresh_token(self):
-        self.__token = self.__jsonrpc.authenticate(account=self.__config['api_user'], password=self.__config['api_pass'])
+        self.__token = self.__jsonrpc.authenticate(account=self._user, password=self._passwd)
         return self.__token
 
     @staticmethod
@@ -41,6 +46,18 @@ class Namenlijst:
         if self.__token is None:
             self.refresh_token()
         return Method(self, self.__jsonrpc, self.__token, method_name)
+    
+    def rate_match(self, name, nmlid, context):
+
+        person = self.findPerson(document={"_id": nmlid}, limit=1)
+        if not len(person):
+            raise KeyError('Person with id "%s" not found', nmlid)
+        person = next(person)
+
+        # fix died_age if missing
+        if person['sort_died_date'] and person['sort_born_date'] and not person['died_age']:
+            person['died_age'] = int(int(person['sort_died_date'])/10000 - int(person['sort_born_date'])/10000)
+
 
 
 class Method:
@@ -119,8 +136,8 @@ class ResultIterator:
     def set_buffer_size(self, buffer_size):
         self.buffer_size = buffer_size
 
-#class AdvancedResultIterator(ResultIterator):
-    # TODO
+# class AdvancedResultIterator(ResultIterator):
+# TODO
 #    def fetch_next(self):
 #        self.kwargs['limit'] = self.buffer_size
 #        self.kwargs['skip'] = self.i
