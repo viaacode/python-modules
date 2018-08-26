@@ -4,7 +4,7 @@ from .cache import LocalCacher
 
 logging.basicConfig()
 _log = logging.getLogger(__name__)
-_log.propagate = True
+# _log.propagate = True
 # _log.setLevel(logging.DEBUG)
 _log = _log.debug
 
@@ -16,7 +16,7 @@ def _get_cache_key(*args, **kwargs):
 
 def exception_redirect(new_exception_class, old_exception_class=Exception, logger=None):
     """
-    Decorator to replace a given exception to another Exception class, with optional error logging.
+    Decorator to replace a given exception to another Exception class, with optional exception logging.
 
     >>>
     >>> class MyException(Exception):
@@ -37,7 +37,7 @@ def exception_redirect(new_exception_class, old_exception_class=Exception, logge
                 return func(*args, **kwargs)
             except old_exception_class as e:
                 if logger is not None:
-                    logger.error(e)
+                    logger.exception(e)
                 raise new_exception_class(e) from None
         return catch_and_redirect_exception
     return _decorator

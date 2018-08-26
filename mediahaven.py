@@ -74,9 +74,9 @@ class MediaHaven:
             self.__cache = _['cache']
 
         if not self.config.is_false('debug'):
-            logging.basicConfig()
+            # logging.basicConfig()
             logger.setLevel(logging.DEBUG)
-            logger.propagate = True
+            # logger.propagate = True
             logger.debug('Debugging enabled through configuration')
 
     def get_cacher(self):
@@ -168,11 +168,11 @@ class MediaHaven:
         http_client.HTTPConnection.debuglevel = 1 if enabled else 0
         log_level = logging.DEBUG if enabled else logging.WARNING
 
-        logging.basicConfig()
+        # logging.basicConfig()
         logging.getLogger().setLevel(log_level)
         requests_log = logging.getLogger("requests.packages.urllib3")
         requests_log.setLevel(log_level)
-        requests_log.propagate = enabled
+        # requests_log.propagate = enabled
 
     def media(self, media_object_id, action=None, *args, **kwargs):
         """Do a media query
