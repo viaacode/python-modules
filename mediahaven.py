@@ -192,18 +192,15 @@ class MediaHaven:
         return Export(self, res.headers['Location'], res.json())
 
     @staticmethod
-    def get_alto_location(self, media_object_id, rights_owner):
-        logger.debug("Try getting alto by location: %s %s", media_object_id, rights_owner)
+    def get_alto_location(media_object_id, rights_owner):
         return 'http://archief-media.viaa.be/viaa/MOB/%s/%s/%s.xml' % \
                (rights_owner.replace(' ', '').upper(), media_object_id, media_object_id)
 
     def get_alto_location_oai(self, fragment_id):
-        logger.debug("Try getting alto by oai: %s", fragment_id)
         metadata = self.oai().GetRecord(identifier='umid:%s' % fragment_id, metadataPrefix='mets').metadata
         return metadata['mets']['fileSec']['fileGrp']['file'][0]['FLocat']['@href']
 
     def get_alto_location_export(self, media_object_id, max_timeout=None):
-        logger.debug("Try getting alto by mediahaven export: %s", media_object_id)
         export = self.export(media_object_id)
         if max_timeout is None:
             max_timeout = 15
@@ -253,14 +250,16 @@ class MediaHaven:
                 attempt += 1
                 file = attempts[attempt-1]()
                 result = req.get(file)
-                if result.status_code != req.codes.ok:
+                if result.status_code != requests.codes.ok:
                     msg = 'Attempt #%d: incorrect status code %d for pid "%s", export url: %s' % \
                           (attempt, result.status_code, pid, file)
                     raise MediaHavenException(msg)
                 logger.debug('Gotten alto with attempt #%d: %s' % (attempt, file))
                 return alto.AltoRoot(result.content)
+            except MediaHavenException as e:
+                logger.warning(e)
             except Exception as e:
-                logger.error(e)
+                logger.exception(e)
         raise MediaHavenException("Could not load alto file after %d attempts" % attempt)
 
     def fragments(self, media_object_id):
@@ -484,7 +483,7 @@ class Export:
         for file in files:
             res = req.get(file)
             logger.debug(res)
-            if res.status_code != req.codes.ok:
+            if res.status_code != requests.codes.ok:
                 raise MediaHavenException("Invalid status code %d" % res.status_code)
             data.append(res.content)
         return data
