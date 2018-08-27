@@ -17,7 +17,7 @@ import time
 import json
 from . import alto
 from .config import Config
-from .decorators import classcache, memoize, exception_redirect
+from . import decorators
 from .cache import LocalCacher
 from PIL import Image, ImageDraw
 from io import BytesIO
@@ -45,7 +45,7 @@ class MediaHavenRequest:
     """
     Automagically replaces the ReadTime Exception with MediaHavenTimeoutException
     """
-    exception_wrapper = exception_redirect(MediaHavenTimeoutException, ReadTimeout, logger)
+    exception_wrapper = decorators.exception_redirect(MediaHavenTimeoutException, ReadTimeout, logger)
 
     def __getattr__(self, item):
         func = getattr(requests, item)
@@ -136,7 +136,7 @@ class MediaHaven:
         """
         return self.call_absolute(_remove_user_pass_from_url(self.url) + url, *args, **kwargs)
 
-    @classcache
+    @decorators.classcache
     def one(self, q=None, **kwargs):
         """Execute a mediahaven search query, return first result (or None)
         """
@@ -222,10 +222,9 @@ class MediaHaven:
 
         return files[0]
 
-    @classcache
+    @decorators.classcache
     def get_alto(self, pid, max_timeout=None):
         cp = [val for val in self.one('+(externalId:%s)' % pid)['mdProperties'] if val['attribute'] == 'CP'][0]['value']
-        logger.debug('getting alto for %s', pid)
         res = self.search('+(originalFileName:%s_alto.xml)' % pid)
 
         if len(res) == 0:
@@ -350,13 +349,18 @@ class PreviewImage:
         return self.mh.get_alto(self.pid)
 
     # @memoize
+    @decorators.log_call(logger=logger, result=True)
     def get_words(self, words, search_kind=None):
         if type(words) is str:
             words = [words]
+        if type(words[0]) is str:
+            words = [words]
+
         if search_kind is None:
             search_kind = 'containsproximity'
         page = list(self.get_alto().pages())
         if len(page) != 1:
+            # logger.warning("Expected only 1 page, got %d", len(page))
             raise MediaHavenException("Expected only 1 page, got %d" % len(page))
         page = page[0]
         textblocks_extent = None
@@ -366,10 +370,11 @@ class PreviewImage:
         coords = []
         textblocks = []
         for textblock in page.textblocks():
+            rects = []
             textblock_extent = Extent.from_object(textblock)
             textblocks.append(textblock_extent)
-            rects = []
-            rects.extend(SearchKinds.run(search_kind, textblock.words(), words))
+
+            rects.extend(SearchKinds.multi_run(search_kind, list(textblock.words()), words))
 
             for rect in rects:
                 word_extent = Extent.from_object(rect)
@@ -482,7 +487,6 @@ class Export:
         data = []
         for file in files:
             res = req.get(file)
-            logger.debug(res)
             if res.status_code != requests.codes.ok:
                 raise MediaHavenException("Invalid status code %d" % res.status_code)
             data.append(res.content)
@@ -554,6 +558,13 @@ class SearchResultIterator(MediaDataListIterator):
 
 
 class SearchKinds:
+    @staticmethod
+    def multi_run(kind, words, list_of_tocheck, **kwargs):
+        result = []
+        for tocheck in list_of_tocheck:
+            result.extend(SearchKinds.run(kind, words, tocheck, **kwargs))
+        return result
+
     @staticmethod
     def run(kind, words, tocheck, **kwargs):
         if tocheck is None:
@@ -662,21 +673,4 @@ class Extent:
 
 
 class Words(dict):
-    def _serialize(obj):
-        """JSON serializer for objects not serializable by default json code"""
-        if isinstance(obj, datetime.date):
-            serial = obj.isoformat()
-            return serial
-
-        if isinstance(obj, datetime.time):
-            serial = obj.isoformat()
-            return serial
-
-        if isinstance(obj, ElementTree.Element):
-            serial = obj.attrib
-            return serial
-
-        return obj.__dict__
-
-    def jsonserialize(obj):
-        return json.dumps(obj, default = Words._serialize)
+    pass

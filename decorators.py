@@ -13,7 +13,7 @@ def _get_cache_key(*args, **kwargs):
     return '||'.join(('|'.join(args), '|'.join(kwargs.items())))
 
 
-def log_call(logger: logging.Logger, log_level=logging.DEBUG):
+def log_call(logger: logging.Logger, log_level=logging.DEBUG, result=False):
     """
     Decorator to log all calls to decorated function to given logger
 
@@ -23,14 +23,28 @@ def log_call(logger: logging.Logger, log_level=logging.DEBUG):
     >>> logger.setLevel(logging.DEBUG)
     >>> @log_call(logger, logging.WARNING)
     ... def test(*args, **kwargs):
-    ...     pass
+    ...     return 'result'
     >>> test('arg1', arg2='someval', arg3='someotherval')
-    WARNING:logger_name: test(arg1, 'arg2': 'someval', 'arg3': 'someotherval')
+    WARNING:logger_name: test(arg1, arg2=someval, arg3=someotherval)
+    'result'
+    >>> @log_call(logger, result=True)
+    ... def test(*args, **kwargs):
+    ...     return 'result'
+    >>> test(arg2='someval', arg3='someotherval')
+    DEBUG:logger_name: test(, arg2=someval, arg3=someotherval)
+    DEBUG:logger_name: test returned: result
+    'result'
     """
     def _log_call(func: callable):
         def _(*args, **kwargs):
-            logger.log(log_level, '%s(%s, %s)', func.__name__, ', '.join(args), [k + '=' + str(kwargs[k]) for k in kwargs])
-            return func(*args, **kwargs)
+            logger.log(log_level, '%s(%s, %s)',
+                       func.__name__,
+                       ', '.join([str(a) for a in args]),
+                       ', '.join([k + '=' + str(kwargs[k]) for k in kwargs]))
+            result_ = func(*args, **kwargs)
+            if result:
+                logger.log(log_level, '%s returned: %s', func.__name__, result_)
+            return result_
         return _
     return _log_call
 
