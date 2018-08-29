@@ -321,7 +321,7 @@ class MediaObjectMDProperties(Mapping):
         return (self._data[k] for k in self._keys)
 
     def items(self):
-        return ((k, self._data[k]) for k in self._keys)
+        return ((k, self.__getitem__(k)) for k in self._keys)
 
 
 class PreviewImage:
