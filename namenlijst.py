@@ -47,9 +47,10 @@ class Namenlijst:
             self.refresh_token()
         return Method(self, self.__jsonrpc, self.__token, method_name)
     
-    def rate_match(self, name, nmlid, context):
-
-        person = self.findPerson(document={"_id": nmlid}, limit=1)
+    def get_extra_info(self, nmlid):
+        person = self.findPerson(document={"_id": nmlid},
+                                 options=["EXTEND_BORN_PLACE", "EXTEND_DIED_PLACE"],
+                                 limit=1)
         if not len(person):
             raise KeyError('Person with id "%s" not found', nmlid)
         person = next(person)
@@ -58,6 +59,7 @@ class Namenlijst:
         if person['sort_died_date'] and person['sort_born_date'] and not person['died_age']:
             person['died_age'] = int(int(person['sort_died_date'])/10000 - int(person['sort_born_date'])/10000)
 
+        return person
 
 
 class Method:
