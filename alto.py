@@ -102,6 +102,7 @@ class AltoWord(object):
             self.full_text = xml.attrib['SUBS_CONTENT']
         else:
             self.full_text = self.text
+        self.meta = None
 
 
 class AltoNull:

@@ -12,17 +12,15 @@ from requests.exceptions import ReadTimeout
 import logging
 import http.client as http_client
 from urllib.parse import quote_plus, urlparse
-import datetime
 import time
-import json
 from . import alto
 from .config import Config
 from . import decorators
 from .cache import LocalCacher
 from PIL import Image, ImageDraw
 from io import BytesIO
-from xml.etree import ElementTree
 from .oai import OAI
+from functools import partial
 
 logger = logging.getLogger(__name__)
 
@@ -349,7 +347,7 @@ class PreviewImage:
         return self.mh.get_alto(self.pid)
 
     # @memoize
-    @decorators.log_call(logger=logger, result=True)
+    # @decorators.log_call(logger=logger, result=True)
     def get_words(self, words, search_kind=None):
         if type(words) is str:
             words = [words]
@@ -367,7 +365,6 @@ class PreviewImage:
         words_extent = None
 
         results = []
-        coords = []
         textblocks = []
         for textblock in page.textblocks():
             rects = []
@@ -378,16 +375,16 @@ class PreviewImage:
 
             for rect in rects:
                 word_extent = Extent.from_object(rect)
-                coords.append({
+                results.append({
                     "extent": word_extent,
                     "word": rect,
-                    "extent_textblock": textblock_extent
+                    "extent_textblock": textblock_extent,
+                    # "orig_phrase": ' '.join(words)
                 })
                 words_extent = Extent.extend(word_extent, words_extent)
 
             if len(rects):
                 textblocks_extent = Extent.extend(textblock_extent, textblocks_extent)
-                results.extend(coords)
 
         pagedim = page.dimensions
 
@@ -557,10 +554,17 @@ class SearchResultIterator(MediaDataListIterator):
         super().__init__(mh, params={"q": q}, start_index=start_index, buffer_size=buffer_size)
 
 
+def set_obj_key(key, value, obj):
+    setattr(obj, key, value)
+    return obj
+
+
 class SearchKinds:
     @staticmethod
     def multi_run(kind, words, list_of_tocheck, **kwargs):
         result = []
+        list_of_tocheck = [x for x in set(tuple(x) for x in list_of_tocheck)]
+        # logger.debug('to check: %s', list_of_tocheck)
         for tocheck in list_of_tocheck:
             result.extend(SearchKinds.run(kind, words, tocheck, **kwargs))
         return result
@@ -570,7 +574,11 @@ class SearchKinds:
         if tocheck is None:
             tocheck = []
         method = getattr(SearchKinds, kind) if type(kind) is str else kind
-        return method([word for word in words if type(word.full_text) is str], tocheck, **kwargs)
+        result = method([word for word in words if type(word.full_text) is str], tocheck, **kwargs)
+        if len(result):
+            addsearchphrase = partial(set_obj_key, 'meta', ' '.join(tocheck))
+            result = list(map(addsearchphrase, result))
+        return result
 
     @staticmethod
     def containsproximity(words, tocheck, proximity=2):
