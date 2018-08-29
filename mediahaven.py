@@ -6,7 +6,6 @@
 #   - rest_connection_url
 #   - oai_connection_url
 
-
 import requests
 from requests.exceptions import ReadTimeout
 import logging
@@ -20,6 +19,7 @@ from .cache import LocalCacher
 from PIL import Image, ImageDraw
 from io import BytesIO
 from .oai import OAI
+from collections.abc import Mapping
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +152,7 @@ class MediaHaven:
         if res['totalNrOfResults'] == 0:
             logger.debug('No results found for params %s', params)
             return None
-        return res['mediaDataList'][0]
+        return MediaObject(res['mediaDataList'][0])
 
     def search(self, q, start_index=0, nr_of_results=25):
         """Execute a mediahaven search query
@@ -223,7 +223,7 @@ class MediaHaven:
     @decorators.classcache
     def get_alto(self, pid, max_timeout=None):
         data = self.one('+(externalId:%s)' % pid)
-        cp = [val for val in data['mdProperties'] if val['attribute'] == 'CP'][0]['value']
+        cp = data['mdProperties']['CP'][0]
         res = self.search('+(originalFileName:%s_alto.xml)' % pid)
 
         if len(res) == 0:
@@ -269,6 +269,59 @@ class MediaHaven:
         """Get a preview of an item (fetches previewImagePath for pid)
         """
         return PreviewImage(pid, self)
+
+
+class MediaObject(Mapping):
+    def __init__(self, data):
+        self.__dict__ = data
+        self.__dict__['mdProperties'] = MediaObjectMDProperties(self.__dict__['mdProperties'])
+
+    def __getitem__(self, k: str):
+        return self.__dict__[k]
+
+    def __len__(self) -> int:
+        return len(self.__dict__)
+
+    def __iter__(self):
+        return self.__dict__.__iter__()
+
+    def keys(self):
+        return self.__dict__.keys()
+
+    def values(self):
+        return self.__dict__.values()
+
+    def items(self):
+        return self.__dict__.items()
+
+    def __repr__(self):
+        return '%s(%s)' % (type(self).__name__, self.__dict__)
+
+
+class MediaObjectMDProperties(Mapping):
+    def __init__(self, props: list):
+        self._data = props
+        self._keys = set([prop['attribute'] for prop in props])
+
+    def __getitem__(self, k: str) -> list:
+        if k not in self._keys:
+            raise KeyError('Unknown key "$s"' % k)
+        return [prop['value'] for prop in self._data if prop['attribute'] == k]
+
+    def __len__(self) -> int:
+        return len(self._keys)
+
+    def __iter__(self):
+        return iter(self._keys)
+
+    def keys(self):
+        return self._keys
+
+    def values(self):
+        return (self._data[k] for k in self._keys)
+
+    def items(self):
+        return ((k, self._data[k]) for k in self._keys)
 
 
 class PreviewImage:
@@ -431,7 +484,7 @@ class Export:
 
 
 class MediaDataListIterator:
-    def __init__(self, mh, params=None, url='/resources/media', start_index=0, buffer_size=25, param_map=None):
+    def __init__(self, mh, params=None, url='/resources/media', start_index=0, buffer_size=25, param_map=None, wrapping_class=None):
         self.buffer_size = buffer_size
         self.mh = mh
         self.params = params if params is not None else dict()
@@ -440,6 +493,7 @@ class MediaDataListIterator:
         self.buffer = []
         self.i = start_index
         self.buffer_idx = 0
+        self.wrapping_class = wrapping_class
         if param_map is not None:
             self.param_map = param_map
         else:
@@ -483,7 +537,10 @@ class MediaDataListIterator:
             self.buffer_idx = 0
             self.fetch_next()
 
-        return self.buffer[self.buffer_idx - 1]
+        if self.wrapping_class is None:
+            return self.buffer[self.buffer_idx - 1]
+
+        return self.wrapping_class(self.buffer[self.buffer_idx - 1])
 
     def set_buffer_size(self, buffer_size):
         self.buffer_size = buffer_size
@@ -491,5 +548,5 @@ class MediaDataListIterator:
 
 class SearchResultIterator(MediaDataListIterator):
     def __init__(self, mh, q, start_index=0, buffer_size=25):
-        super().__init__(mh, params={"q": q}, start_index=start_index, buffer_size=buffer_size)
+        super().__init__(mh, params={"q": q}, start_index=start_index, buffer_size=buffer_size, wrapping_class=MediaObject)
 

@@ -82,6 +82,7 @@ class AltoRoot(Alto):
                 results.append({
                     "extent": word_extent,
                     "word": rect,
+                    'textblock': textblock,
                     "extent_textblock": textblock_extent,
                     # "orig_phrase": ' '.join(words)
                 })
@@ -166,6 +167,12 @@ class AltoWord(object):
         else:
             self.full_text = self.text
         self.meta = None
+
+    def __repr__(self):
+        return '%s(%s)' % (type(self).__name__, self.__str__())
+
+    def __str__(self):
+        return str(self.__dict__)
 
 
 class AltoNull:
@@ -263,6 +270,9 @@ class Extent:
 
     def __str__(self):
         return str(self.__dict__)
+
+    def __repr__(self):
+        return '%s(%s)' % (type(self).__name__, self.__str__())
 
     def scale(self, scale_x, scale_y, inplace=False):
         if not inplace:
