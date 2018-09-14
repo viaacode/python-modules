@@ -2,6 +2,9 @@ from xml.etree import ElementTree
 import re
 from functools import partial
 from copy import copy
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class AltoError(Exception):
@@ -28,6 +31,10 @@ class Alto:
 
     def words(self):
         return (AltoWord(i) for i in self._yield_types('String'))
+
+    @property
+    def text(self):
+        return ' '.join(word.full_text for word in self.words())
 
 
 class AltoRoot(Alto):
@@ -56,9 +63,9 @@ class AltoRoot(Alto):
 
     def search_words(self, words, search_kind=None):
         if type(words) is str:
-            words = [words]
-        if type(words[0]) is str:
-            words = [words]
+            words = [[words]]
+
+        words = list(words)
 
         if search_kind is None:
             search_kind = 'containsproximity'
@@ -196,9 +203,10 @@ class SearchKinds:
     @staticmethod
     def multi_run(kind, words, list_of_tocheck, **kwargs):
         result = []
-        list_of_tocheck = [x for x in set(tuple(x) for x in list_of_tocheck)]
+        # list_of_tocheck = [x for x in set(tuple(x) for x in list_of_tocheck)]
         # logger.debug('to check: %s', list_of_tocheck)
         for tocheck in list_of_tocheck:
+            logger.debug('Check "%s"', tocheck)
             result.extend(SearchKinds.run(kind, words, tocheck, **kwargs))
         return result
 

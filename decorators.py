@@ -10,7 +10,7 @@ _log = _log.debug
 
 def _get_cache_key(*args, **kwargs):
     _log(args)
-    return '||'.join(('|'.join(args), '|'.join(kwargs.items())))
+    return '||'.join(('|'.join(map(str, args)), '|'.join(kwargs.items())))
 
 
 def log_call(logger: logging.Logger, log_level=logging.DEBUG, result=False):
@@ -84,7 +84,7 @@ def memoize(f, cacher=None):
     def someFunc():
     """
     if cacher is None:
-        cacher = LocalCacher(max_items=500)
+        cacher = LocalCacher(max_items=50)
 
     def _cacher(*args, **kwargs):
         global _log
@@ -131,17 +131,22 @@ def classcache(f):
     """
     def _cacher(*args, **kwargs):
         global _log
-        cacher = args[0].get_cacher()
+        obj = args[0]
+        cacher = obj.get_cacher()
         if not cacher:
             cacher = cache.DummyCacher()
         x = _get_cache_key(f.__name__, *args[1:], **kwargs)
 
+        if hasattr(obj.__class__, 'classcacheVersionNumber'):
+            x = '%s|v:%d' % (x, obj.__class__.classcacheVersionNumber)
+            _log('version keyed: %s' % x)
+
         if x in cacher:
-            _log('%s(%s): got: %s' % (classcache.__name__, f.__name__, str(x)))
+            _log('%s.%s:%s got: %s' % (obj.__class__.__name__, f.__name__, classcache.__name__, str(x)))
             return cacher[x]
 
         res = f(*args, **kwargs)
-        _log('%s(%s): set: %s' % (classcache.__name__, f.__name__, str(x)))
+        _log('%s.%s:%s set: %s' % (obj.__class__.__name__, f.__name__, classcache.__name__, str(x)))
         cacher[x] = res
         return res
 

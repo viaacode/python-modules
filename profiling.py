@@ -21,10 +21,11 @@ class timeit:
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
 
-    def __init__(self, text=None, min_time=None):
+    def __init__(self, text=None, min_time=None, callback=None):
         self.text = text
         self.min_time = min_time
         self.start = time.monotonic()
+        self.callback = self._default_callback if callback is None else callback
 
     def restart(self):
         self.start = time.monotonic()
@@ -38,8 +39,14 @@ class timeit:
 
     def __exit__(self, kind, value, traceback):
         ms = self.elapsed()
-        if self.min_time is None or ms > self.min_time:
-            self.logger.info(self.text + ': %dms', ms)
+        is_slow = self.min_time is not None and ms > self.min_time
+        self.callback(ms, is_slow, self.text, kind, value, traceback)
 
     def get_logger(self):
         return self.logger
+
+    def _default_callback(self, ms, is_slow, text, kind, value, traceback):
+        if self.min_time is None:
+            self.logger.info(text + ': %dms', ms)
+        elif is_slow:
+            self.logger.warning(text + ': %dms', ms)

@@ -56,18 +56,24 @@ req = MediaHavenRequest()
 
 
 class MediaHaven:
+    classcacheVersionNumber = 0
+
     def __init__(self, config=None):
         self.config = Config(config, 'mediahaven')
         _ = self.config
         self.url = urlparse(_['rest_connection_url'])
+        self.buffer_size = 25
         self.token = None
         self.tokenText = None
         self.timeout = None
 
-        if not self.config.is_false('timeout'):
+        if not _.is_false('buffer_size'):
+            self.buffer_size = _['buffer_size']
+
+        if not _.is_false('timeout'):
             self.timeout = int(_['timeout'])
 
-        self.__cache = LocalCacher(500)
+        self.__cache = LocalCacher(20)
         if 'cache' in _:
             self.__cache = _['cache']
 
@@ -115,13 +121,22 @@ class MediaHaven:
         def do_call():
             if not self.tokenText:
                 self.refresh_token()
-            res = getattr(req, method)(url, headers={'Authorization': self.tokenText},
-                                       timeout=self.timeout, params=params)
+            res = getattr(req, method)(url,
+                                       headers={'Authorization': self.tokenText},
+                                       timeout=self.timeout,
+                                       params=params)
             logger.debug("HTTP %s %s with params %s returns status code %d", method, url, params, res.status_code)
             return res
 
-        r = do_call()
-        if r.status_code < 200 or r.status_code >= 300:
+        r = None
+        try:
+            r = do_call()
+        except MediaHavenTimeoutException as e:
+            # let exception pass, allow auto-retry on read timeout
+            logger.warning(e)
+            r = do_call()
+
+        if r is None or r.status_code < 200 or r.status_code >= 300:
             self.refresh_token()
             r = do_call()
         self._validate_response(r)
@@ -154,9 +169,11 @@ class MediaHaven:
             return None
         return MediaObject(res['mediaDataList'][0])
 
-    def search(self, q, start_index=0, nr_of_results=25):
+    def search(self, q, start_index=0, nr_of_results=None):
         """Execute a mediahaven search query
         """
+        if nr_of_results is None:
+            nr_of_results = self.buffer_size
         return SearchResultIterator(self, q, start_index, nr_of_results)
 
     @staticmethod
@@ -305,7 +322,7 @@ class MediaObjectMDProperties(Mapping):
 
     def __getitem__(self, k: str) -> list:
         if k not in self._keys:
-            raise KeyError('Unknown key "$s"' % k)
+            raise KeyError('Unknown key "%s"' % k)
         return [prop['value'] for prop in self._data if prop['attribute'] == k]
 
     def __len__(self) -> int:
