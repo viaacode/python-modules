@@ -5,6 +5,7 @@ from tqdm import tqdm
 
 import logging
 logger = logging.getLogger(__name__)
+from abc import ABC, abstractmethod
 
 
 class Chunk:
@@ -156,24 +157,71 @@ def binary_search(alist, item, start=None, stop=None):
     return None
 
 
-class SortedBytesFile:
+class EmptySortedBytes:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+    def __len__(self):
+        return 0
+
+    def __contains__(self, item):
+        return False
+
+    def __repr__(self):
+        return '<%s>' % type(self).__name__
+
+    def __getitem__(self, item: int):
+        raise IndexError
+
+    def __call__(self, *args, **kwargs):
+        return self
+
+
+# sorta singleton
+EmptySortedBytes = EmptySortedBytes()
+
+
+class ASortedBytes(ABC):
+    def assert_valid_item(self, item):
+        if len(item) != self._nbytes:
+            raise KeyError("Expected length of %s" % self._nbytes)
+
+    def __contains__(self, item):
+        self.assert_valid_item(item)
+        return binary_search(self, item) is not None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self):
+        pass
+
+
+class SortedBytesFile(ASortedBytes):
     """
     Reads the 32-bit int files as proper chunks, returns as bytes
     """
-    def __init__(self, filename):
+    def __init__(self, filename, nbytes=4):
         self._filename = filename
         self._file = None
         self._len = 0
+        self._nbytes = nbytes
 
     def __enter__(self):
         size = os.stat(self._filename).st_size
-        if size % 4:
-            raise EOFError("Expected size of multiple of 4B")
-        self._len = size >> 2
+        if size % self._nbytes:
+            raise EOFError("Expected size of multiple of %sB" % self._nbytes)
+        if size == 0:
+            # optim if file is empty
+            return EmptySortedBytes()
+        self._len = size // self._nbytes
         self._file = open(self._filename, 'rb')
         return self
 
-    def __getitem__(self, item: int):
+    def __getitem__(self, item):
         if type(item) is slice:
             if item.stop or item.step:
                 raise NotImplementedError("Slice not supported atm")
@@ -184,8 +232,8 @@ class SortedBytesFile:
             item = self._len + item
         if item < 0 or item >= self._len:
             raise IndexError("Index %d out of range" % item)
-        self._file.seek(item << 2)
-        return self._file.read(4)
+        self._file.seek(item * self._nbytes)
+        return self._file.read(self._nbytes)
 
     def __len__(self) -> int:
         return self._len
@@ -193,13 +241,44 @@ class SortedBytesFile:
     def __repr__(self):
         return '<%s %s[%d]>' % (type(self).__name__, self._filename, self._len)
 
-    def __contains__(self, item):
-        if len(item) != 4:
-            raise KeyError("Expected length of 4")
-        return binary_search(self, item) is not None
-
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._file.close()
+        if self._file:
+            self._file.close()
+
+
+class CachedSortedBytesFile:
+    def __init__(self, filename):
+        self._filename = filename
+
+    def __enter__(self):
+        with open(self._filename, 'r') as file:
+            data = file.read()
+        return SortedBytesMemory(data)
+
+
+class SortedBytesMemory(ASortedBytes):
+    def __init__(self, data, nbytes=4):
+        size = len(data)
+        if size % nbytes:
+            raise KeyError("File length needs to be multiple of %d" % nbytes)
+
+        self._len = size // nbytes
+        self._data = data
+        self._nbytes = nbytes
+
+    def __getitem__(self, item):
+        return self._data[item]
+        if type(item) is slice:
+            if item.stop or item.step:
+                raise NotImplementedError("Slice not supported atm")
+            item = item.start
+        if type(item) is not int:
+            raise NotImplementedError("Only supporting integers as item keys")
+        if item < 0:
+            item = self._len + item
+        if item < 0 or item >= self._len:
+            raise IndexError("Index %d out of range" % item)
+        return self._data[item * self._nbytes]
 
 
 class SortedChunksFile(SortedBytesFile):
@@ -209,10 +288,9 @@ class SortedChunksFile(SortedBytesFile):
     def __getitem__(self, item: int):
         return Chunk(super().__getitem__(item))
 
-    def __contains__(self, item: Chunk):
+    def assert_valid_item(self, item):
         if type(item) is not Chunk:
             raise KeyError("Expected a Chunk")
-        return binary_search(self, item) is not None
 
 
 def file_contains(file, checksums):
@@ -221,8 +299,14 @@ def file_contains(file, checksums):
 
 
 class SortedBytesDirectory:
-    def __init__(self, path):
+    def __init__(self, path, suffix=None):
         self._path = os.fsencode(path)
+        if suffix is None:
+            suffix = '.crc'
+        self._suffix = suffix
+
+    def basename(self, file):
+        return os.path.basename(file)[:-len(self._suffix)]
 
     def files(self):
         prefix = None
