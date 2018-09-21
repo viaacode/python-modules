@@ -118,7 +118,7 @@ class Namenlijst:
 class Conversions:
     @staticmethod
     def normalize(txt):
-        return re.sub(r"\s+", " ", re.sub(r"[^a-z ]", '', unidecode.unidecode(txt).lower()))
+        return re.sub(r"\s+", " ", re.sub(r"[^a-z ]", '', unidecode.unidecode(txt).lower())).strip()
 
     @classmethod
     def convert_events(cls, events, language=None):

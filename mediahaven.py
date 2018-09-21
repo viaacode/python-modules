@@ -10,7 +10,7 @@ import requests
 from requests.exceptions import ReadTimeout
 import logging
 import http.client as http_client
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import quote_plus, urlparse, ParseResult
 import time
 from . import alto
 from .config import Config
@@ -24,10 +24,16 @@ from collections.abc import Mapping
 logger = logging.getLogger(__name__)
 
 
-def _remove_user_pass_from_url(url):
-    if type(url) is str:
+def _remove_auth_from_url(url):
+    """
+    Obfuscate the auth from a URL
+    :param url: str|ParseResult
+    :return: string
+    """
+    if type(url) is not ParseResult:
         url = urlparse(url)
-    return url._replace(netloc="{}:{}".format(url.hostname, url.port)).geturl()
+    replaced = url._replace(netloc=url.hostname)
+    return replaced.geturl()
 
 
 class MediaHavenException(Exception):
@@ -93,19 +99,20 @@ class MediaHaven:
     def oai(self):
         _ = self.config
         url = urlparse(_['oai_connection_url'])
-        return OAI(_remove_user_pass_from_url(url), auth=(url.username, url.password))
+        return OAI(_remove_auth_from_url(url), auth=(url.username, url.password))
 
     def refresh_token(self):
         """Fetch a new token based on the user/pass combination of config
         """
         logger.info('Refreshing oauth access token (username %s)', self.url.username)
-        r = req.post('%s%s' % (_remove_user_pass_from_url(self.url), '/resources/oauth/access_token'),
+        r = req.post('%s%s' % (_remove_auth_from_url(self.url), '/resources/oauth/access_token'),
                      auth=(self.url.username, self.url.password),
                      data={'grant_type': 'password'},
                      timeout=self.timeout)
         self._validate_response(r)
         self.token = r.json()
         self.tokenText = self.token['token_type'] + ' ' + self.token['access_token']
+        logger.debug('Token: %s' % self.tokenText)
         return True
 
     @staticmethod
@@ -147,7 +154,7 @@ class MediaHaven:
     def call(self, url, *args, **kwargs):
         """Execute a call to MediaHaven server
         """
-        return self.call_absolute(_remove_user_pass_from_url(self.url) + url, *args, **kwargs)
+        return self.call_absolute(_remove_auth_from_url(self.url) + url, *args, **kwargs)
 
     @decorators.classcache
     def one(self, q=None, **kwargs):
@@ -565,5 +572,6 @@ class MediaDataListIterator:
 
 class SearchResultIterator(MediaDataListIterator):
     def __init__(self, mh, q, start_index=0, buffer_size=25):
-        super().__init__(mh, params={"q": q}, start_index=start_index, buffer_size=buffer_size, wrapping_class=MediaObject)
+        super().__init__(mh, params={"q": q}, start_index=start_index, buffer_size=buffer_size,
+                         wrapping_class=MediaObject)
 

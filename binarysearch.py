@@ -267,7 +267,6 @@ class SortedBytesMemory(ASortedBytes):
         self._nbytes = nbytes
 
     def __getitem__(self, item):
-        return self._data[item]
         if type(item) is slice:
             if item.stop or item.step:
                 raise NotImplementedError("Slice not supported atm")

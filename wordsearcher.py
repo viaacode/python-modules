@@ -1,6 +1,4 @@
 from pythonmodules.config import Config
-from sqlalchemy import MetaData, create_engine
-from sqlalchemy.sql.expression import func, select
 import logging
 from binascii import crc32
 from itertools import chain
@@ -10,8 +8,11 @@ from pythonmodules.profiling import timeit
 from pythonmodules.binarysearch import SortedBytesDirectory, SortedBytesFile
 from collections import namedtuple, deque
 from abc import ABC, abstractmethod
-from sqlalchemy.sql.schema import Table
 import gzip
+import pysolr
+from pythonmodules.db import ReflectDB
+from sqlalchemy.sql.expression import func, select
+import pysolr
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,18 @@ class ProfilingResultAggregatorCallback(AProfilingResultCallback, deque):
             cb(result)
 
 
-class WordSearcher:
+class WordSearcherSolr:
+    def __init__(self, url):
+        self._url = url
+
+    def search(self, words):
+        solr = pysolr.Solr(self._url, timeout=10)
+        # q = 'text:(%s)' % (' AND '.join(words))
+        q = 'text:"%s"' % (' '.join(words),)
+        return solr.search(q)
+
+
+class WordSearcherBinarySearch:
     def __init__(self, path):
         if not os.path.exists(path):
             raise WordSearcherError("Path '%s' does not exist" % path)
@@ -88,57 +100,25 @@ class WordSearcher:
         return self.searcher.search_multithread(words, threads=threads)
 
 
-class DB:
-    def __init__(self, *args, **kwargs):
-        self._db = None
-        self._meta = None
-        self._connected = False
-        super().__init__(*args, **kwargs)
+class WordSearcher:
+    def __init__(self, config=None):
+        config = Config(config, section='wordsearcher')
+        self._strat = 'solr' if 'strategy' not in config else config['strategy']
+        if self._start == 'solr':
+            self._searcher = WordSearcherSolr(config)
+        elif self._start == 'binarysearch':
+            self._searcher = WordSearcherBinarySearch('./indexes')
+        self._config = config
 
-    def connect(self):
-        if self._connected:
-            return
-        config = Config()
-        self._db = create_engine(config['db']['connection_url_live'])
-        with timeit('connect db', 1000):
-            self._db.connect()
-
-        self._connected = True
-        with timeit('reflect db', 1000):
-            self._meta = MetaData(bind=self._db)
-            self._meta.reflect()
-
-    @property
-    def db(self):
-        self.connect()
-        return self._db
-
-    @property
-    def meta(self):
-        self.connect()
-        return self._meta
-
-    def __getattr__(self, item):
-        return self.get_table(item)
-
-    def get_table(self, table) -> Table:
-        return self.meta.tables[table]
-
-    def execute(self, *args, **kwargs):
-        return self.db.execute(*args, **kwargs)
+    def search(self, words):
+        return self._searcher.search(words)
 
 
 class WordSearcherAdmin(WordSearcher):
     def __init__(self, *args, **kwargs):
-        self._db = None
         super().__init__(*args, **kwargs)
+        self.db = ReflectDB(self._config['db'])
 
-    @property
-    def db(self):
-        if self._db is None:
-            self._db = DB()
-        return self._db
-    
     def build_index(self, prefix='', suffix='.crc', skip_if_exists=True):
         table = self.db.attestation_texts
         c = next(func.max(table.c.id).select().execute())[0]
@@ -264,9 +244,7 @@ class WordSearcherAdmin(WordSearcher):
                 callback(result)
 
     def import_solr(self, offset=None):
-        import pysolr
         table = self.db.attestation_texts
-
         size = self.db.execute(func.max(table.c.id)).scalar()
         res = table.select()
         if offset is not None:
@@ -275,11 +253,11 @@ class WordSearcherAdmin(WordSearcher):
 
         solr_url = 'http://localhost:8983/solr/wordsearcher/'
         solr = pysolr.Solr(solr_url, timeout=10)
-        batchSize = 1000
+        batch_size = 1000
         batch = deque()
         for row in tqdm(res, total=size):
             batch.append({"id": row.pid, "text": row.text})
-            if len(batch) >= batchSize:
+            if len(batch) >= batch_size:
                 solr.add(batch)
                 batch = []
 
