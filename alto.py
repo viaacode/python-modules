@@ -68,7 +68,7 @@ class AltoRoot(Alto):
         words = list(words)
 
         if search_kind is None:
-            search_kind = 'containsproximity'
+            search_kind = 'icontainsproximity'
         page = list(self.pages())
         if len(page) != 1:
             # logger.warning("Expected only 1 page, got %d", len(page))
@@ -220,6 +220,18 @@ class SearchKinds:
             addsearchphrase = partial(set_obj_key, 'meta', ' '.join(tocheck))
             result = list(map(addsearchphrase, result))
         return result
+
+    @staticmethod
+    def icontainsproximity(words, tocheck, proximity=2):
+        res = []
+        tocheck = list(map(str.lower, tocheck))
+        for idx, word in enumerate(words):
+            if any(c in word.full_text.lower() for c in tocheck):
+                # check proximity
+                context = [c.full_text.lower() for c in words[idx-proximity:idx+proximity+1]]
+                if all(any(tocheckword in c for c in context) for tocheckword in tocheck):
+                    res.append(word)
+        return res
 
     @staticmethod
     def containsproximity(words, tocheck, proximity=2):
