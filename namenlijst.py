@@ -9,7 +9,7 @@ import datetime
 from collections import namedtuple, defaultdict
 from collections.abc import Mapping
 import re
-import unidecode
+from unidecode import unidecode
 
 
 logger = logging.getLogger(__name__)
@@ -118,7 +118,7 @@ class Namenlijst:
 class Conversions:
     @staticmethod
     def normalize(txt):
-        return re.sub(r"\s+", " ", re.sub(r"[^a-z ]", '', unidecode.unidecode(txt).lower())).strip()
+        return re.sub(r"\s+", " ", re.sub(r"[^a-z ]", '', unidecode(txt).lower())).strip()
 
     @classmethod
     def convert_events(cls, events, language=None):

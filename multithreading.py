@@ -19,7 +19,6 @@ class MultiThread:
     """
     Simple wrapper class for basic multithreading
 
-    >>> import time
     >>> from collections import namedtuple
     >>> def noop(*args, **kwargs):
     ...    pass
@@ -34,7 +33,8 @@ class MultiThread:
     >>> workers = [0] * n_workers
     >>> def proc(n, thread_id, *args, **kwargs):
     ...    global total, workers
-    ...    time.sleep(.01)
+    ...    from time import sleep
+    ...    sleep(.01)
     ...    workers[thread_id] += 1
     ...    total += n
     ...    return n
@@ -67,13 +67,14 @@ class MultiThread:
     True
     >>> all(k['thread_id'] in [0, 1] for a, k in res)
     True
-    >>> t = MultiThread(lambda k, **kwargs: '%s%.s' % (k, time.sleep(.2)))
+    >>> from time import sleep
+    >>> t = MultiThread(lambda k, **kwargs: '%s%.s' % (k, sleep(.2)))
     >>> t.append('before')
     >>> t.result
     >>> t.start()
     >>> t.result
     []
-    >>> time.sleep(.3)
+    >>> sleep(.3)
     >>> t.result
     ['before']
     >>> t.append('after')
@@ -94,21 +95,25 @@ class MultiThread:
         self.pass_thread_id = pass_thread_id
 
     def _worker(self, *args, **kwargs):
+        self.logger.info('Worker started')
         processor = partial(self.processor, *args, **kwargs)
         while True:
+            args = self.q.get()
+            result = None
             try:
-                args = self.q.get()
                 result = processor(*args)
-                if result is not None:
-                    self.result.append(result)
-                self.q.task_done()
-                if self.pbar is not None:
-                    self.pbar.update(1)
             except Exception as e:
                 if self.logger:
                     self.logger.exception(e)
 
+            if result is not None:
+                self.result.append(result)
+            self.q.task_done()
+            if self.pbar is not None:
+                self.pbar.update(1)
+
     def append(self, *args):
+        self.logger.debug('Append 1 item to queue')
         self.q.put(args)
 
     def extend(self, iterable):
@@ -123,6 +128,7 @@ class MultiThread:
         if self.running:
             raise AlreadyRunningError("Attempted to run while already running")
         self.result = []
+        self.logger.debug('Starting threaded run, %d workers', self.n_workers)
         for i in range(self.n_workers):
             if self.pass_thread_id:
                 kwargs['thread_id'] = i
@@ -134,17 +140,19 @@ class MultiThread:
         return self.result is not None
 
     def run(self, *args, **kwargs) -> list:
+        self.logger.debug('run')
         self.start(*args, **kwargs)
+        self.logger.debug('started, waiting now')
         self.wait()
         result = self.result
         self.result = None
+        self.logger.debug('Threaded run done, %d results', len(result))
         return result
 
 
 def singlethreaded(*args, pass_thread_id=True, class_method_with_self=False, pbar=None, **kwargs):
     """
     To easily disable the multithreading, and just run sequentially (just replace @multithreaded with @singlethreaded)
-    >>> import time
     >>> from collections import namedtuple
     >>> @singlethreaded(2)
     ... def refl(*args, **kwargs):
@@ -160,10 +168,11 @@ def singlethreaded(*args, pass_thread_id=True, class_method_with_self=False, pba
     >>> @singlethreaded()
     ... def proc(n, thread_id, *args, **kwargs):
     ...    global total, workers
+    ...    from time import sleep
     ...    debug = 'n=%d, thread_id=%d, args=%s %s' % (n, thread_id, args, kwargs)
     ...    # print(debug)
     ...    # raise Exception(debug)
-    ...    time.sleep(.01)
+    ...    sleep(.01)
     ...    if thread_id >= len(workers):
     ...        raise IndexError("thread_id %d not found: %s" % (thread_id, debug))
     ...    workers[thread_id] += 1
@@ -210,19 +219,24 @@ def singlethreaded(*args, pass_thread_id=True, class_method_with_self=False, pba
                 args[0], alist = alist, args[0]
 
             results = []
+
             for arow in alist:
-                if class_method_with_self:
-                    nargs = chain([args[0]], [arow], args[1:])
-                else:
-                    nargs = chain(args, [arow])
-                nargs = list(nargs)
-                if pass_thread_id:
-                    kwargs['thread_id'] = 0
-                res = func(*nargs, **kwargs)
-                if res is not None:
-                    results.append(res)
-                if pbar:
-                    pbar.update(1)
+                try:
+                    if class_method_with_self:
+                        nargs = chain([args[0]], [arow], args[1:])
+                    else:
+                        nargs = chain(args, [arow])
+                    nargs = list(nargs)
+                    if pass_thread_id:
+                        kwargs['thread_id'] = 0
+                    res = func(*nargs, **kwargs)
+                    if res is not None:
+                        results.append(res)
+                except Exception as e:
+                    logger.exception(e)
+                finally:
+                    if pbar:
+                        pbar.update(1)
             return results
         return _
 
@@ -236,7 +250,7 @@ def multithreaded(*args, class_method_with_self=False, **kwargs):
     """
     Decorator version for multithreading
 
-    >>> import time
+    >>> from time import sleep
     >>> from collections import namedtuple
     >>> @multithreaded(2)
     ... def refl(*args, **kwargs):
@@ -253,7 +267,8 @@ def multithreaded(*args, class_method_with_self=False, **kwargs):
     >>> @multithreaded(n_workers)
     ... def proc(n, thread_id, *args, **kwargs):
     ...    global total, workers
-    ...    time.sleep(.01)
+    ...    from time import sleep
+    ...    sleep(.01)
     ...    workers[thread_id] += 1
     ...    total += n
     ...    return n
@@ -303,6 +318,8 @@ def multithreaded(*args, class_method_with_self=False, **kwargs):
             if class_method_with_self:
                 args = list(args)
                 args[0], alist = alist, args[0]
+            logger.debug('extend')
+            # mt.start(*args, **kwargs)
             mt.extend(alist)
             return mt.run(*args, **kwargs)
         return _
@@ -314,5 +331,6 @@ multithreadedmethod = partial(multithreaded, class_method_with_self=True)
 
 if __name__ == "__main__":
     import doctest
+    from time import sleep
     doctest.testmod()
 

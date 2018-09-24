@@ -78,26 +78,26 @@ class WordSearcherSolr:
         return solr.search(q)
 
 
-class WordSearcherBinarySearch:
-    def __init__(self, path):
-        if not os.path.exists(path):
-            raise WordSearcherError("Path '%s' does not exist" % path)
-        self._path = os.path.realpath(path)
-        self.searcher = SortedBytesDirectory(self._path)
-
-    @property
-    def path(self):
-        return self._path
-
-    @staticmethod
-    def hasher(b):
-        return crc32(b.encode('ascii')).to_bytes(4, 'little')
-
-    def search(self, words, threads=7):
-        if threads is None or threads == 1:
-            return self.searcher.search(words)
-
-        return self.searcher.search_multithread(words, threads=threads)
+# class WordSearcherBinarySearch:
+#     def __init__(self, path):
+#         if not os.path.exists(path):
+#             raise WordSearcherError("Path '%s' does not exist" % path)
+#         self._path = os.path.realpath(path)
+#         self.searcher = SortedBytesDirectory(self._path)
+#
+#     @property
+#     def path(self):
+#         return self._path
+#
+#     @staticmethod
+#     def hasher(b):
+#         return crc32(b.encode('ascii')).to_bytes(4, 'little')
+#
+#     def search(self, words, threads=7):
+#         if threads is None or threads == 1:
+#             return self.searcher.search(words)
+#
+#         return self.searcher.search_multithread(words, threads=threads)
 
 
 class WordSearcher:
@@ -106,8 +106,8 @@ class WordSearcher:
         self._strat = 'solr' if 'strategy' not in config else config['strategy']
         if self._start == 'solr':
             self._searcher = WordSearcherSolr(config)
-        elif self._start == 'binarysearch':
-            self._searcher = WordSearcherBinarySearch('./indexes')
+        # elif self._start == 'binarysearch':
+        #     self._searcher = WordSearcherBinarySearch('./indexes')
         self._config = config
 
     def search(self, words):
@@ -118,100 +118,6 @@ class WordSearcherAdmin(WordSearcher):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.db = ReflectDB(self._config['db'])
-
-    def build_index(self, prefix='', suffix='.crc', skip_if_exists=True):
-        table = self.db.attestation_texts
-        c = next(func.max(table.c.id).select().execute())[0]
-        logger.debug('Build index: %d items to process', c)
-        with tqdm(total=c) as pbar:
-            for row in table.select().execution_options(stream_results=True).execute():
-                pid = row[1]
-                filename = os.path.join(self.path, "%s%s%s" % (prefix, pid, suffix))
-                if skip_if_exists and os.path.isfile(filename):
-                    pbar.set_description('%s already exists' % pid)
-                    pbar.update(1)
-                    logger.debug('%s already exists: skip', pid)
-                    continue
-                pbar.set_description(pid)
-                words = sorted(set(map(self.hasher, filter(len, row[2].split(' ')))))
-                with open(filename, 'wb') as f:
-                    f.write(b''.join(words))
-                logger.debug('pid %s done, %d words witten to: %s', (pid, len(words), filename))
-                pbar.update(1)
-
-    def build_pid_map(self):
-        table = self.db.attestation_texts
-        mapping = dict()
-        size = self.db.execute(func.max(table.c.id)).scalar()
-        pids = select([table.c.id, table.c.pid]).execution_options(stream_results=True).execute()
-        for id_, pid in tqdm(pids, total=size):
-            mapping[id_.to_bytes(4, byteorder='little')] = pid
-
-        with open(os.path.join(self.path, 'pidmap.py'), 'w+') as f:
-            f.write('id2pid = ')
-            f.write(str(mapping))
-            f.write('\n')
-            f.write('pid2id = ')
-            f.write(str({v: k for k, v in mapping.items()}))
-
-    def build_reverse_index(self):
-        from .multithreading import multithreaded
-        import resource
-        from indexes.pidmap import pid2id
-
-        def pid2bytes(pid):
-            if pid not in pid2id:
-                raise WordSearcherError("Unmapped pid '%s'" % pid)
-            return pid2id[pid]
-
-        # make sure directory structure exists ok
-        hex = '0123456789ABCDEF'
-        wordfiletpl = './revindexes/%s'
-        for a in hex:
-            if not os.path.isdir(wordfiletpl % a):
-                os.mkdir(wordfiletpl % a, 0o770)
-            for b in hex:
-                if not os.path.isdir(wordfiletpl % (os.path.join(a, b))):
-                    os.mkdir(wordfiletpl % (os.path.join(a, b)), 0o770)
-
-        max_open_files = resource.getrlimit(resource.RLIMIT_NOFILE)[0] * 7 // 100
-        # limits[0] = resource.RLIM_INFINITY
-        # limits[1] = resource.RLIM_INFINITY
-        # limits = (resource.RLIM_INFINITY, resource.RLIM_INFINITY)
-        # limits = (500000, 1000000)
-        # resource.setrlimit(resource.RLIMIT_NOFILE, limits)
-
-        def evict(k, v):
-            v.close()
-
-        # filecache = LRU(max_open_files, callback=evict)
-
-        files = list(self.searcher.files())
-
-        @multithreaded(1, pbar=tqdm(total=len(files)))
-        def dowork(file, thread_id):
-            pidval = self.searcher.basename(file)
-
-            try:
-                id_bytes = pid2bytes(pidval)
-            except WordSearcherError as e:
-                logger.exception(e)
-                return
-
-            with SortedBytesFile(file) as words:
-                for word in words:
-                    getfile(word).write(id_bytes)
-
-        def getfile(word):
-            # if False and word in filecache:
-            #     return filecache[word]
-            wordfiletpl = './revindexes/%s'
-            word = AProfilingResultCallback.format_bytes([word])
-
-            filename = wordfiletpl % (os.path.join(word[0], word[1], word[2:] + '.rev.gz'))
-            return gzip.open(filename, 'ab')
-
-        dowork(files)
 
     def do_profiling(self, threads=None, callback: AProfilingResultCallback=None):
         """
@@ -243,23 +149,6 @@ class WordSearcherAdmin(WordSearcher):
                 result = ProfilingResult(thread, len(list(results)), timer.elapsed(), test)
                 callback(result)
 
-    def import_solr(self, offset=None):
-        table = self.db.attestation_texts
-        size = self.db.execute(func.max(table.c.id)).scalar()
-        res = table.select()
-        if offset is not None:
-            res = res.offset(offset)
-        res = res.execution_options(stream_results=True).execute()
-
-        solr_url = 'http://localhost:8983/solr/wordsearcher/'
-        solr = pysolr.Solr(solr_url, timeout=10)
-        batch_size = 1000
-        batch = deque()
-        for row in tqdm(res, total=size):
-            batch.append({"id": row.pid, "text": row.text})
-            if len(batch) >= batch_size:
-                solr.add(batch)
-                batch = []
 
 
 

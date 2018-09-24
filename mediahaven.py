@@ -104,7 +104,7 @@ class MediaHaven:
     def refresh_token(self):
         """Fetch a new token based on the user/pass combination of config
         """
-        logger.info('Refreshing oauth access token (username %s)', self.url.username)
+        logger.debug('Refreshing oauth access token (username %s)', self.url.username)
         r = req.post('%s%s' % (_remove_auth_from_url(self.url), '/resources/oauth/access_token'),
                      auth=(self.url.username, self.url.password),
                      data={'grant_type': 'password'},
@@ -112,7 +112,6 @@ class MediaHaven:
         self._validate_response(r)
         self.token = r.json()
         self.tokenText = self.token['token_type'] + ' ' + self.token['access_token']
-        logger.debug('Token: %s' % self.tokenText)
         return True
 
     @staticmethod
