@@ -5,6 +5,7 @@ import logging
 import http.client as http_client
 from urllib.parse import urlparse
 import datetime
+from .decorators import retry
 
 from collections import namedtuple, defaultdict
 from collections.abc import Mapping
@@ -13,6 +14,7 @@ from unidecode import unidecode
 
 
 logger = logging.getLogger(__name__)
+retry = retry(5, logger=logger, sleep=1)
 
 
 Names = namedtuple('Names', ['name', 'name_normalized', 'firstnames', 'lastnames', 'firstnames_normalized',
@@ -49,6 +51,7 @@ class Namenlijst:
     # def findPersonAdvanced(query = None):
     # todo
 
+    @retry
     def refresh_token(self):
         self.__token = self.__jsonrpc.authenticate(account=self._user, password=self._passwd)
         return self.__token
@@ -285,15 +288,14 @@ class Method:
         self.__jsonrpc = jsonrpc
         self.__method_name = method_name
 
-    def __call__(self, *args, **kwargs):
-        logger.debug("NMLD call %s with args(%s, %s)", self.__method_name, args, kwargs)
-        kwargs = dict(kwargs, token=self.__token)
+    @retry
+    def _call_iterable(self, *args, **kwargs):
+        kwargs['total'] = 'true'
+        result = ResultIterator(getattr(self.__jsonrpc, self.__method_name), kwargs)
+        return result
 
-        if self.__method_name in self.__iterable_methods:
-            kwargs['total'] = 'true'
-            result = ResultIterator(getattr(self.__jsonrpc, self.__method_name), kwargs)
-            return result
-
+    @retry
+    def _call_non_iterable(self, *args, **kwargs):
         attempts = 2
         while attempts > 0:
             try:
@@ -307,8 +309,15 @@ class Method:
 
                 kwargs['token'] = self.__obj.refresh_token()
                 self.__token = kwargs['token']
-        # will never reach this
-        assert False
+
+    def __call__(self, *args, **kwargs):
+        logger.debug("NMLD call %s with args(%s, %s)", self.__method_name, args, kwargs)
+        kwargs = dict(kwargs, token=self.__token)
+
+        if self.__method_name in self.__iterable_methods:
+            return self._call_iterable(*args, **kwargs)
+
+        return self._call_non_iterable(*args, **kwargs)
 
 
 class ResultIterator:
@@ -327,9 +336,13 @@ class ResultIterator:
     def fetch_next(self):
         self.kwargs['limit'] = self.buffer_size
         self.kwargs['skip'] = self.i
-        results = self.method(self.kwargs)
+        results = self._get_next_results()
         self.length = results['total']
         self.buffer = results['data']
+
+    @retry
+    def _get_next_results(self):
+        return self.method(self.kwargs)
 
     def __len__(self):
         if self.length is None:
@@ -354,6 +367,8 @@ class ResultIterator:
 
     def set_buffer_size(self, buffer_size):
         self.buffer_size = buffer_size
+
+
 
 # class AdvancedResultIterator(ResultIterator):
 # TODO

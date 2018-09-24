@@ -1,6 +1,8 @@
 import logging
 
 from .cache import LocalCacher
+from functools import partial
+import time
 
 _log = logging.getLogger(__name__)
 # _log.propagate = True
@@ -151,6 +153,50 @@ def classcache(f):
         return res
 
     return _cacher
+
+
+def retry(tries=5, logger=None, sleep=None):
+    """
+    Automagically retry the action
+
+    >>> times = 0
+    >>> @retry(5, logger=None)
+    ... def a(n):
+    ...     global times
+    ...     times += 1
+    ...     if times < n:
+    ...        raise Exception("nope")
+    ...     success = times
+    ...     times = 0
+    ...     return success
+    >>> a(4)
+    4
+    >>> a(0)
+    1
+    >>> a(1)
+    1
+    >>> a(5)
+    5
+    >>> a(6)
+    Traceback (most recent call last):
+    ...
+    Exception: nope
+    """
+    def _(f):
+        def _decorator(*args, **kwargs):
+            func = partial(f, *args, **kwargs)
+            for i in range(tries):
+                try:
+                    return func()
+                except Exception as e:
+                    if logger:
+                        logger.exception(e)
+                    if i + 1 == tries:
+                        raise e
+                    if sleep is not None:
+                        time.sleep(sleep)
+        return _decorator
+    return _
 
 
 if __name__ == '__main__':
