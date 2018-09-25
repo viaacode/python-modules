@@ -79,7 +79,7 @@ class MediaHaven:
         if not _.is_false('timeout'):
             self.timeout = int(_['timeout'])
 
-        self.__cache = LocalCacher(20)
+        self.__cache = LocalCacher(200)
         if 'cache' in _:
             self.__cache = _['cache']
 

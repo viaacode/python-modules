@@ -206,7 +206,7 @@ class SearchKinds:
         # list_of_tocheck = [x for x in set(tuple(x) for x in list_of_tocheck)]
         # logger.debug('to check: %s', list_of_tocheck)
         for tocheck in list_of_tocheck:
-            logger.debug('Check "%s"', tocheck)
+            # logger.debug('Check "%s"', tocheck)
             result.extend(SearchKinds.run(kind, words, tocheck, **kwargs))
         return result
 

@@ -11,7 +11,6 @@ _log = _log.debug
 
 
 def _get_cache_key(*args, **kwargs):
-    _log(args)
     return '||'.join(('|'.join(map(str, args)), '|'.join(kwargs.items())))
 
 
