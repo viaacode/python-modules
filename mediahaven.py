@@ -20,6 +20,7 @@ from PIL import Image, ImageDraw
 from io import BytesIO
 from .oai import OAI
 from collections.abc import Mapping
+from functools import partial
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +174,7 @@ class MediaHaven:
         if res['totalNrOfResults'] == 0:
             logger.debug('No results found for params %s', params)
             return None
-        return MediaObject(res['mediaDataList'][0])
+        return MediaObject(res['mediaDataList'][0], q)
 
     def search(self, q, start_index=0, nr_of_results=None):
         """Execute a mediahaven search query
@@ -295,9 +296,10 @@ class MediaHaven:
 
 
 class MediaObject(Mapping):
-    def __init__(self, data):
+    def __init__(self, data, query=None):
         self.__dict__ = data
         self.__dict__['mdProperties'] = MediaObjectMDProperties(self.__dict__['mdProperties'])
+        self.__query = query
 
     def __getitem__(self, k: str):
         return self.__dict__[k]
@@ -317,8 +319,11 @@ class MediaObject(Mapping):
     def items(self):
         return self.__dict__.items()
 
+    def __str__(self):
+        return '%s(%s)' % (type(self).__name__, str({k: str(v) for k, v in self.__dict__.items()}))
+
     def __repr__(self):
-        return '%s(%s)' % (type(self).__name__, self.__dict__)
+        return '%s(%s)' % (type(self).__name__, repr(self.__query))
 
 
 class MediaObjectMDProperties(Mapping):
@@ -345,6 +350,9 @@ class MediaObjectMDProperties(Mapping):
 
     def items(self):
         return ((k, self.__getitem__(k)) for k in self._keys)
+
+    def __str__(self):
+        return '%s(%s)' % (type(self).__name__, dict(self))
 
 
 class PreviewImage:
@@ -571,6 +579,7 @@ class MediaDataListIterator:
 
 class SearchResultIterator(MediaDataListIterator):
     def __init__(self, mh, q, start_index=0, buffer_size=25):
+        wrapping_class = partial(MediaObject, query=q)
         super().__init__(mh, params={"q": q}, start_index=start_index, buffer_size=buffer_size,
-                         wrapping_class=MediaObject)
+                         wrapping_class=wrapping_class)
 

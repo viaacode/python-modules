@@ -5,7 +5,13 @@ from itertools import chain
 from pythonmodules.profiling import timeit
 from pythonmodules.namenlijst import Namenlijst
 from pythonmodules.mediahaven import MediaHaven
+from pythonmodules.config import Config
 import logging
+
+use_solr = True
+
+if use_solr:
+    from pysolr import Solr
 
 
 logger = logging.getLogger(__name__)
@@ -73,6 +79,8 @@ class Matcher:
 
 
 class Rater:
+    if use_solr:
+        _solr = Solr(Config(section='wordsearcher')['solr'])
     # todo
     multipliers = defaultdict(lambda: 1,
                               # died_place_locality=5,
@@ -88,11 +96,25 @@ class Rater:
         self._alto = None
         self._details = None
         self._lookups = None
+        self._text = None
+
+    @property
+    def text(self):
+        if not use_solr:
+            return self.alto.text
+
+        if self._text is None:
+            res = self._solr.search('id:%s' % self.pid, rows=1, fl='text')
+            if not len(res) or not len(res.docs):
+                self._text = ''
+            else:
+                self._text = res.docs[0]['text'][0]
+        return self._text
 
     @property
     def language(self):
         if self._language is None:
-            with timeit('mh.one', 200):
+            with timeit('mh.one', 1000):
                 language = self.mh.one('+(externalId:%s)' % self.pid)
                 self._language = language['mdProperties']['language'][0].lower()
         return self._language
@@ -107,7 +129,7 @@ class Rater:
     @property
     def details(self):
         if self._details is None:
-            with timeit('nml', 100):
+            with timeit('nml', 250):
                 self._details = Namenlijst().get_person_full(self.nmlid, self.language)
         return self._details
 
@@ -137,8 +159,8 @@ class Rater:
         return self._lookups
 
     def ratings(self):
-        language, alto, nml = self.language, self.alto, self.details
-        matcher = Matcher(alto.text, nml.names.variations_normalized)
+        language, nml = self.language, self.details
+        matcher = Matcher(self.text, nml.names.variations_normalized)
         scores = matcher.scores(self.lookups)
 
         total = sum(scores[k].rating for k in scores)
