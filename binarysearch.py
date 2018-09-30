@@ -2,10 +2,10 @@ import math
 import os
 from .multithreading import multithreaded
 from tqdm import tqdm
+from abc import ABC
 
 import logging
 logger = logging.getLogger(__name__)
-from abc import ABC, abstractmethod
 
 
 class Chunk:
