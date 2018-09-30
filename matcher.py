@@ -7,11 +7,7 @@ from pythonmodules.namenlijst import Namenlijst
 from pythonmodules.mediahaven import MediaHaven
 from pythonmodules.config import Config
 import logging
-
-use_solr = True
-
-if use_solr:
-    from pysolr import Solr
+from pysolr import Solr
 
 
 logger = logging.getLogger(__name__)
@@ -79,8 +75,7 @@ class Matcher:
 
 
 class Rater:
-    if use_solr:
-        _solr = Solr(Config(section='wordsearcher')['solr'])
+    _solr = Solr(Config(section='solr')['url'])
     # todo
     multipliers = defaultdict(lambda: 1,
                               # died_place_locality=5,
@@ -100,31 +95,22 @@ class Rater:
 
     @property
     def text(self):
-        if not use_solr:
-            return self.alto.text
-
         if self._text is None:
-            res = self._solr.search('id:%s' % self.pid, rows=1, fl='text')
+            res = self._solr.search('id:%s' % self.pid, rows=1, fl=['text', 'language'])
             if not len(res) or not len(res.docs):
                 self._text = ''
             else:
-                self._text = res.docs[0]['text'][0]
+                res = res.docs[0]
+                self._text = res['text']
+                self._language = res['language']
         return self._text
 
     @property
     def language(self):
         if self._language is None:
-            with timeit('mh.one', 1000):
-                language = self.mh.one('+(externalId:%s)' % self.pid)
-                self._language = language['mdProperties']['language'][0].lower()
+            # pre load text fills in language
+            text = self.text
         return self._language
-
-    @property
-    def alto(self):
-        if self._alto is None:
-            with timeit('alto', 200):
-                self._alto = self.mh.get_alto(self.pid)
-        return self._alto
 
     @property
     def details(self):

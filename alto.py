@@ -34,7 +34,14 @@ class Alto:
 
     @property
     def text(self):
-        return ' '.join(word.full_text for word in self.words())
+        words = []
+        prev_word = None
+        for idx, w in enumerate(word.full_text for word in self.words()):
+            if prev_word == w:
+                continue
+            words.append(w)
+            prev_word = w
+        return ' '.join(words)
 
 
 class AltoRoot(Alto):

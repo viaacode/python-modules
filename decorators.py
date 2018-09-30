@@ -6,7 +6,7 @@ import time
 
 _log = logging.getLogger(__name__)
 # _log.propagate = True
-# _log.setLevel(logging.DEBUG)
+_log.setLevel(logging.WARNING)
 _log = _log.debug
 
 

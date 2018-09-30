@@ -139,6 +139,18 @@ class MultiThread:
     def running(self):
         return self.result is not None
 
+    def run_with_iter(self, iterable, *args, **kwargs):
+        self.logger.debug('run')
+        self.start(*args, **kwargs)
+        self.logger.debug('started, add iterable')
+        self.extend(iterable)
+        self.logger.debug('waiting to finish')
+        self.wait()
+        result = self.result
+        self.result = None
+        self.logger.debug('Threaded run done, %d results', len(result))
+        return result
+
     def run(self, *args, **kwargs) -> list:
         self.logger.debug('run')
         self.start(*args, **kwargs)
@@ -150,7 +162,7 @@ class MultiThread:
         return result
 
 
-def singlethreaded(*args, pass_thread_id=True, class_method_with_self=False, pbar=None, **kwargs):
+def singlethreaded(*args, pass_thread_id=True, class_method_with_self=False, pre_start=False, pbar=None, **kwargs):
     """
     To easily disable the multithreading, and just run sequentially (just replace @multithreaded with @singlethreaded)
     >>> from collections import namedtuple
@@ -246,7 +258,7 @@ def singlethreaded(*args, pass_thread_id=True, class_method_with_self=False, pba
 singlethreadedmethod = partial(singlethreaded, class_method_with_self=True)
 
 
-def multithreaded(*args, class_method_with_self=False, **kwargs):
+def multithreaded(*args, class_method_with_self=False, pre_start=False, **kwargs):
     """
     Decorator version for multithreading
 
@@ -319,9 +331,10 @@ def multithreaded(*args, class_method_with_self=False, **kwargs):
                 args = list(args)
                 args[0], alist = alist, args[0]
             logger.debug('extend')
-            # mt.start(*args, **kwargs)
-            mt.extend(alist)
-            return mt.run(*args, **kwargs)
+            if not pre_start:
+                mt.extend(alist)
+                return mt.run(*args, **kwargs)
+            return mt.run_with_iter(alist, *args, **kwargs)
         return _
 
     return _decorator
