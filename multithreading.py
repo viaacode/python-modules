@@ -2,6 +2,7 @@ from queue import Queue
 from threading import Thread
 from functools import partial
 from itertools import chain
+from pythonmodules.null import Null
 
 import logging
 logger = logging.getLogger(__name__)
@@ -85,9 +86,11 @@ class MultiThread:
     >>> t.result
     ['before', 'after']
     """
-    def __init__(self, processor=None, n_workers=5, pbar=None, pass_thread_id=True):
+    def __init__(self, processor=None, n_workers=5, queue_buffer_size=None, pbar=None, pass_thread_id=True):
         self.processor = processor
-        self.q = Queue()
+        if queue_buffer_size is None:
+            queue_buffer_size = 0
+        self.q = Queue(maxsize=queue_buffer_size)
         self.n_workers = n_workers
         self.pbar = pbar
         self.logger = logger
@@ -113,7 +116,7 @@ class MultiThread:
                 self.pbar.update(1)
 
     def append(self, *args):
-        self.logger.debug('Append 1 item to queue')
+        # self.logger.debug('Append 1 item to queue')
         self.q.put(args)
 
     def extend(self, iterable):
@@ -250,6 +253,7 @@ def singlethreaded(*args, pass_thread_id=True, class_method_with_self=False, pre
                     if pbar:
                         pbar.update(1)
             return results
+        _._multithread = Null
         return _
 
     return _decorator
@@ -285,6 +289,8 @@ def multithreaded(*args, class_method_with_self=False, pre_start=False, **kwargs
     ...    total += n
     ...    return n
     ...
+    >>> type(proc._multithread) is MultiThread
+    True
     >>> results = proc(range(0, 100))
     >>> set(results) == set(range(0, 100))
     True
@@ -330,17 +336,37 @@ def multithreaded(*args, class_method_with_self=False, pre_start=False, **kwargs
             if class_method_with_self:
                 args = list(args)
                 args[0], alist = alist, args[0]
-            logger.debug('extend')
             if not pre_start:
                 mt.extend(alist)
                 return mt.run(*args, **kwargs)
             return mt.run_with_iter(alist, *args, **kwargs)
+
+        _._multithread = mt
         return _
 
     return _decorator
 
 
 multithreadedmethod = partial(multithreaded, class_method_with_self=True)
+
+
+class __ExtraTests:
+    """
+    >>> class A:
+    ...    @multithreadedmethod()
+    ...    def test(self, *args, **kwargs):
+    ...        pass
+    ...
+    ...    def get_multithread(self):
+    ...        return self.test._multithread
+    >>> b = A()
+    >>> type(b.test._multithread) is MultiThread
+    True
+    >>> type(b.get_multithread()) is MultiThread
+    True
+    """
+    pass
+
 
 if __name__ == "__main__":
     import doctest

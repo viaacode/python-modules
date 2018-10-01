@@ -65,14 +65,15 @@ req = MediaHavenRequest()
 class MediaHaven:
     classcacheVersionNumber = 0
 
-    def __init__(self, config=None):
+    def __init__(self, config=None, **kwargs):
         self.config = Config(config, 'mediahaven')
         _ = self.config
+        _.update(kwargs)
         self.url = urlparse(_['rest_connection_url'])
-        self.buffer_size = 25
         self.token = None
         self.tokenText = None
         self.timeout = None
+        self.buffer_size = None
 
         if not _.is_false('buffer_size'):
             self.buffer_size = _['buffer_size']
@@ -220,7 +221,10 @@ class MediaHaven:
 
     def get_alto_location_oai(self, fragment_id):
         metadata = self.oai().GetRecord(identifier='umid:%s' % fragment_id, metadataPrefix='mets').metadata
-        return metadata['mets']['fileSec']['fileGrp']['file'][0]['FLocat']['@href']
+        try:
+            return metadata['mets']['fileSec']['fileGrp']['file'][0]['FLocat']['@href']
+        except KeyError:
+            return None
 
     def get_alto_location_export(self, media_object_id, max_timeout=None):
         export = self.export(media_object_id)
@@ -246,19 +250,17 @@ class MediaHaven:
 
     @decorators.classcache
     def get_alto(self, pid, max_timeout=None):
-        data = self.one('+(externalId:%s)' % pid)
+        if type(pid) is MediaObject:
+            data = pid
+            pid = pid['externalId']
+        else:
+            data = self.one('+(externalId:%s)' % pid)
         cp = data['mdProperties']['CP'][0]
-        res = self.search('+(originalFileName:%s_alto.xml)' % pid)
+        res = self.one('+(originalFileName:%s_alto.xml)' % pid)
 
-        if len(res) == 0:
+        if res is None:
             logger.warning('Expected 1 result for %s, got none', pid)
             return None
-
-        if len(res) > 1:
-            logger.warning('Expected 1 result for %s, gotten %d', pid, len(res))
-            raise MediaHavenException("Expected only one result")
-
-        res = next(res)
 
         attempt = 0
         attempts = [
@@ -271,7 +273,11 @@ class MediaHaven:
             try:
                 attempt += 1
                 file = attempts[attempt-1]()
-                result = req.get(file)
+                if file is not None:
+                    # logger.debug('get_alto: Attempt %d: %s', attempt, file)
+                    result = req.get(file, timeout=self.timeout)
+                else:
+                    raise MediaHavenException('Couldnt get URL (result = None)')
                 if result.status_code != requests.codes.ok:
                     msg = 'Attempt #%d: incorrect status code %d for pid "%s", export url: %s' % \
                           (attempt, result.status_code, pid, file)

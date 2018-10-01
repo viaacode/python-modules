@@ -13,22 +13,30 @@ class Config:
             config = config[section]
 
         self.config = config
+        self.overrides = {}
 
     def __getattr__(self, name):
-        if not self.__contains__(name):
-            raise KeyError(name)
-        return self.config[name]
+        if name in self.overrides:
+            return self.overrides[name]
+        if name in self.config:
+            return self.config[name]
+        raise KeyError(name)
 
     def __contains__(self, key):
-        return key in self.config
+        return key in self.config or key in self.overrides
 
     def __getitem__(self, key):
-        if not self.__contains__(key):
-            raise IndexError("Invalid item '%s'" % key)
-        return self.config[key]
+        return self.__getattr__(key)
+
+    def update(self, vals):
+        self.overrides.update(vals)
 
     def keys(self):
-        return self.config.keys()
+        keys = tuple(set(list(self.config.keys()) + list(self.overrides.keys())))
+        return keys
 
     def is_false(self, key):
-        return key not in self.config or self.config[key] in ['', 'false', '0', 'none', 'off']
+        if key not in self:
+            return True
+        val = self[key]
+        return val in ['', 'false', '0', 'none', 'off']
