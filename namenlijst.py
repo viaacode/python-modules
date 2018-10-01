@@ -93,8 +93,16 @@ class Namenlijst:
         person['names'] = Conversions.get_names(person)
 
         # fix died_age if missing
-        if person['sort_died_date'] and person['sort_born_date'] and not person['died_age']:
-            person['died_age'] = int(int(person['sort_died_date']) / 10000 - int(person['sort_born_date']) / 10000)
+        if not person['died_age']:
+            died = Conversions.sort_date_to_date(person['sort_died_date'])
+            born = Conversions.sort_date_to_date(person['sort_born_date'])
+            if born is None or died is None:
+                person['died_age'] = None
+            else:
+                age = died.year - born.year
+                if died.month < born.month or (died.month == born.month and died.day < born.day):
+                    age -= 1
+                person['died_age'] = died - born
 
         # add events
         person['events'] = self.findEvent(document={"person_id": nmlid}, options=['EXTEND_PLACE'])
@@ -213,8 +221,23 @@ class Conversions:
         return datetime.date(values[0], values[1], values[2])
 
     @staticmethod
-    def sort_date_to_date(date):
-        return datetime.date(int(date[:4]), int(date[4:6]), int(date[6:8]))
+    def sort_date_to_date(date: str):
+        year, month, day = date[:4], date[4:6], date[6:]
+        try:
+            year = int(year)
+        except ValueError:
+            return None
+
+        try:
+            month = int(month)
+        except ValueError:
+            month = 6
+
+        try:
+            day = int(day)
+        except ValueError:
+            day = 1
+        return datetime.date(year, month, day)
 
     @staticmethod
     def convert_place(data, language=None):

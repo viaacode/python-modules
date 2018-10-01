@@ -6,7 +6,7 @@ from pythonmodules.profiling import timeit
 
 class ReflectDB:
     """
-    None-optimal sqlalchemy db helper object (using reflection to build ORM)
+    Non-optimal sqlalchemy db helper object (using reflection to build ORM)
     """
     def __init__(self, connection_url):
         self._db = None
