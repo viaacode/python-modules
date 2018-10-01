@@ -51,11 +51,25 @@ class MediaHavenRequest:
     """
     exception_wrapper = decorators.exception_redirect(MediaHavenTimeoutException, ReadTimeout, logger)
 
+    def __init__(self):
+        c = Config(section='mediahaven')
+        insecure_ssl = 'insecure_ssl' in c and not c.is_false('insecure_ssl')
+        self._insecure_ssl = insecure_ssl
+        if insecure_ssl:
+            logger.warning('Using insecure SSL (not verifying certificates)')
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
     def __getattr__(self, item):
         func = getattr(requests, item)
         # quick hack to always use proxy:
         # import functools
         # func = functools.partial(func, proxies={'http': 'proxy:80', 'https': 'proxy:80'})
+
+        # dirty hack, ignore ssl verification
+        if self._insecure_ssl and item in ('get', 'post'):
+            func = partial(func, verify=False)
+
         return MediaHavenRequest.exception_wrapper(func)
 
 
@@ -116,10 +130,12 @@ class MediaHaven:
         self.tokenText = self.token['token_type'] + ' ' + self.token['access_token']
         return True
 
-    @staticmethod
-    def _validate_response(r):
+    def _validate_response(self, r):
+        if r.status_code == 401:
+            raise MediaHavenException('User "%s" not authorized, code %d: %s' % (self.url.username, r.status_code, r.text))
+
         if r.status_code < 200 or r.status_code >= 300:
-            logger.warning("Wrong status code %d: %s ", r.status_code, r.text)
+            # logger.warning("Wrong status code %d: %s ", r.status_code, r.text)
             raise MediaHavenException("Wrong status code %d: %s " % (r.status_code, r.text))
 
     def call_absolute(self, url, params=None, method=None, raw_response=False):
