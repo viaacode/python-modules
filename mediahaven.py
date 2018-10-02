@@ -275,7 +275,7 @@ class MediaHaven:
         res = self.one('+(originalFileName:%s_alto.xml)' % pid)
 
         if res is None:
-            logger.warning('Expected 1 result for %s, got none', pid)
+            logger.debug('Expected 1 result for %s, got none', pid)
             return None
 
         attempt = 0
