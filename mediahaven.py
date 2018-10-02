@@ -10,18 +10,21 @@ import requests
 from requests.exceptions import ReadTimeout
 import logging
 import http.client as http_client
+import urllib3
 from urllib.parse import quote_plus, urlparse, ParseResult
 import time
 from . import alto
 from .config import Config
 from . import decorators
-from .cache import LocalCacher
+from .cache import DummyCacher
 from PIL import Image, ImageDraw
 from io import BytesIO
 from .oai import OAI
 from collections.abc import Mapping
 from functools import partial
 from time import sleep
+from datetime import datetime
+import email.utils as rfc5322
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +49,45 @@ class MediaHavenTimeoutException(MediaHavenException):
     pass
 
 
+def too_many_req_decorator(sleeptime=1):
+    def _decorator(func):
+        def new_func(*args, **kwargs):
+            r = func(*args, **kwargs)
+            attempts = 5
+            while attempts > 0 and r is not None and r.status_code == 429:
+                attempts -= 1
+
+                logger.info('Too many req, sleeping for %d secs and retrying another %d times', sleeptime, attempts)
+
+                if 'retry-after' in r.headers:
+                    logger.info('App suggested retrying after "%s"', r.headers['retry-after'])
+                    try:
+                        secs = int(r.headers['retry-after'])
+                    except ValueError:
+                        # parse HTTP-date, MUST also support RFC 850 and ANSI C asctime (but f that for the moment!)
+                        # rfc5322 date-time
+                        secs = rfc5322.parsedate_to_datetime(r.headers['retry-after'])
+                        secs = secs - datetime.now()
+                        secs = secs.total_seconds()
+
+                    if secs <= 0:
+                        secs = None
+
+                    logger.info('App suggested sleeping for %s secs', str(secs))
+                    # todo: replace sleeptime with suggested retry-after value? (3600 seems default, we really wanna wait an hour?)
+
+                sleep(sleeptime)
+                r = func(*args, **kwargs)
+            return r
+        return new_func
+    return _decorator
+
+
 class MediaHavenRequest:
     """
-    Automagically replaces the ReadTime Exception with MediaHavenTimeoutException
+    Automagically replaces the ReadTimeout Exception with MediaHavenTimeoutException
     """
-    exception_wrapper = decorators.exception_redirect(MediaHavenTimeoutException, ReadTimeout, logger)
+    exception_wrapper = decorators.exception_redirect(MediaHavenTimeoutException, ReadTimeout)
 
     def __init__(self):
         c = Config(section='mediahaven')
@@ -61,35 +98,21 @@ class MediaHavenRequest:
         self._insecure_ssl = insecure_ssl
         if insecure_ssl:
             logger.warning('Using insecure SSL (not verifying certificates)')
-            import urllib3
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-    def wrap_too_many_req(self, func):
-        sleeptime = self._sleeptime
-
-        def new_func(*args, **kwargs):
-            r = func(*args, **kwargs)
-            attempts = 5
-            while attempts > 0 and r and r.status_code == 429:
-                attempts -= 1
-                logger.info('Too many req, sleeping for %d secs and retrying another %d times', sleeptime, attempts)
-                sleep(sleeptime)
-                r = func(*args, **kwargs)
-            return r
-
-        return new_func
 
     def __getattr__(self, item):
         func = getattr(requests, item)
-        # quick hack to always use proxy:
         # import functools
-        # func = functools.partial(func, proxies={'http': 'proxy:80', 'https': 'proxy:80'})
+        if item in ('get', 'post'):
+            if self._insecure_ssl:
+                # ignore ssl verification
+                func = partial(func, verify=False)
 
-        # dirty hack, ignore ssl verification
-        if self._insecure_ssl and item in ('get', 'post'):
-            func = partial(func, verify=False)
+            # quick hack to always use proxy:
+            # func = partial(func, proxies={'http': 'proxy:80', 'https': 'proxy:80'})
+
             # wrap in too many req handler
-            func = self.wrap_too_many_req(func)
+            func = too_many_req_decorator(self._sleeptime)(func)
 
         return MediaHavenRequest.exception_wrapper(func)
 
@@ -116,14 +139,12 @@ class MediaHaven:
         if not _.is_false('timeout'):
             self.timeout = int(_['timeout'])
 
-        self.__cache = LocalCacher(200)
+        self.__cache = DummyCacher()
         if 'cache' in _:
             self.__cache = _['cache']
 
         if not self.config.is_false('debug'):
-            # logging.basicConfig()
             logger.setLevel(logging.DEBUG)
-            # logger.propagate = True
             logger.debug('Debugging enabled through configuration')
 
     def get_cacher(self):
@@ -178,7 +199,7 @@ class MediaHaven:
             r = do_call()
         except MediaHavenTimeoutException as e:
             # let exception pass, allow auto-retry on read timeout
-            logger.warning(e)
+            logger.info(e)
             r = do_call()
 
         if r is None or r.status_code < 200 or r.status_code >= 300:
