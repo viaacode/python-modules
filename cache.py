@@ -78,12 +78,9 @@ class LocalCacher:
     ...
     KeyError: 'test'
     """
-    max_items = None
-    dict = collections.OrderedDict()
-
     def __init__(self, max_items=None):
-        self.max_items = max_items
         self.dict = collections.OrderedDict()
+        self.max_items = max_items
 
     def __setitem__(self, k, v):
         if self.max_items is not None and len(self.dict) >= self.max_items:

@@ -21,6 +21,7 @@ from io import BytesIO
 from .oai import OAI
 from collections.abc import Mapping
 from functools import partial
+from time import sleep
 
 logger = logging.getLogger(__name__)
 
@@ -54,11 +55,29 @@ class MediaHavenRequest:
     def __init__(self):
         c = Config(section='mediahaven')
         insecure_ssl = 'insecure_ssl' in c and not c.is_false('insecure_ssl')
+        self._sleeptime = 1
+        if 'sleeptime' in c:
+            self._sleeptime = int(c['sleeptime'])
         self._insecure_ssl = insecure_ssl
         if insecure_ssl:
             logger.warning('Using insecure SSL (not verifying certificates)')
             import urllib3
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    def wrap_too_many_req(self, func):
+        sleeptime = self._sleeptime
+
+        def new_func(*args, **kwargs):
+            r = func(*args, **kwargs)
+            attempts = 5
+            while attempts > 0 and r and r.status_code == 429:
+                attempts -= 1
+                logger.info('Too many req, sleeping for %d secs and retrying another %d times', sleeptime, attempts)
+                sleep(sleeptime)
+                r = func(*args, **kwargs)
+            return r
+
+        return new_func
 
     def __getattr__(self, item):
         func = getattr(requests, item)
@@ -69,6 +88,8 @@ class MediaHavenRequest:
         # dirty hack, ignore ssl verification
         if self._insecure_ssl and item in ('get', 'post'):
             func = partial(func, verify=False)
+            # wrap in too many req handler
+            func = self.wrap_too_many_req(func)
 
         return MediaHavenRequest.exception_wrapper(func)
 
