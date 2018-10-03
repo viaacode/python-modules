@@ -140,9 +140,9 @@ class Conversions:
             if 'extend_place' in row:
                 if len(row['extend_place']):
                     row['place'] = cls.convert_place(row['extend_place'], language)
-                del row['extend_place']
+                # del row['extend_place']
                 row = {k: row[k] for k in row if k[:6] != 'place_'}
-            del row['person_id']  # superfluous
+            # del row['person_id']  # superfluous
             result[row['type']] = row
         return result
 
@@ -200,9 +200,10 @@ class Conversions:
         if type(keys) is str:
             keys = [keys]
         for key in keys:
+            # if row[key] is not None:
             row[key] = cls.get_date(row, key)
-            if ('sort_%s_date' % key) in row:
-                del row['sort_%s_date' % key]
+            # if ('sort_%s_date' % key) in row:
+            #     del row['sort_%s_date' % key]
         return row
 
     @staticmethod
@@ -218,10 +219,18 @@ class Conversions:
         if any(type(value) is not int for value in values):
             return None
 
+        if values[1] > 12:
+            # I know this isn't really clean, but hey, we work with the data we have...
+            logger.warning('%s %s:%s: Month > 12, assume month and date are swapped for %d/%d/%d',
+                           row['person_id'], row['type'], key, *values)
+            values = (values[0], values[2], values[1])
+
         return datetime.date(values[0], values[1], values[2])
 
     @staticmethod
     def sort_date_to_date(date: str):
+        if len(date) < 8:
+            return None
         year, month, day = date[:4], date[4:6], date[6:]
         try:
             year = int(year)

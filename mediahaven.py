@@ -361,8 +361,9 @@ class MediaHaven:
 
 class MediaObject(Mapping):
     def __init__(self, data, query=None):
+        if type(data['mdProperties']) is not MediaObjectMDProperties:
+            data['mdProperties'] = MediaObjectMDProperties(data['mdProperties'])
         self.__dict__ = data
-        self.__dict__['mdProperties'] = MediaObjectMDProperties(self.__dict__['mdProperties'])
         self.__query = query
 
     def __getitem__(self, k: str):
