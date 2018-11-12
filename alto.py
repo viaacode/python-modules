@@ -50,7 +50,8 @@ class Alto:
 
 
 class AltoRoot(Alto):
-    def __init__(self, xml):
+    def __init__(self, xml, url=None):
+        self.url = url
         self.xml = ElementTree.fromstring(xml)
 
         # validate namespace
@@ -261,10 +262,16 @@ class SearchKinds:
         res = []
         normalizer = Conversions.normalize_no_num
         tocheck = list(map(normalizer, tocheck))
-        for idx in range(len(words) - len(tocheck)):
-            if all(normalizer(words[idx + nextcheckidx].full_text) == nextcheck
-                   for nextcheckidx, nextcheck in enumerate(tocheck)):
-                res.extend(words[idx:idx+len(tocheck)])
+        text = [(idx, normalizer(w.full_text)) for idx, w in enumerate(words) if len(normalizer(w.full_text))]
+        # logger.debug(text)
+        l = len(tocheck)
+
+        for idx in range(len(text)-l+1):
+            # logger.info('Compare %d:%d %s to %s', idx, idx+l,
+            #             ' '.join(tocheck), ' '.join(t[1] for t in text[idx:idx+l]))
+            if all(text[idx + nextcheckidx][1] == nextcheck for nextcheckidx, nextcheck in enumerate(tocheck)):
+                # logger.warning('FOUND %d %s', idx, [w.full_text for w in words])
+                res.extend(words[text[idx][0]:text[idx+l-1][0]+1])
         return res
 
     @staticmethod

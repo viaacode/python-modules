@@ -87,7 +87,7 @@ class Namenlijst:
                                  options=["EXTEND_BORN_PLACE", "EXTEND_DIED_PLACE", "EXTEND_DOCUMENTS"],
                                  limit=1)
         if not len(person):
-            raise KeyError('Person with id "%s" not found', nmlid)
+            raise KeyError('Person with id "%s" not found' % nmlid)
 
         person = next(person)
         person['names'] = Conversions.get_names(person)

@@ -122,7 +122,7 @@ req = MediaHavenRequest()
 
 
 class MediaHaven:
-    classcacheVersionNumber = 0
+    classcacheVersionNumber = 1
 
     def __init__(self, config=None, **kwargs):
         self.config = Config(config, 'mediahaven')
@@ -349,7 +349,7 @@ class MediaHaven:
                           (attempt, result.status_code, pid, file)
                     raise MediaHavenException(msg)
                 logger.debug('Gotten alto with attempt #%d: %s' % (attempt, file))
-                return alto.AltoRoot(result.content)
+                return alto.AltoRoot(result.content, file)
             except MediaHavenException as e:
                 logger.warning(e)
             except Exception as e:
@@ -529,7 +529,7 @@ class PreviewImage:
             rect = word['extent'].scale(scale_x, scale_y)
             canvas.rectangle(rect.as_coords(), outline=words_color)
 
-        highlight_textblocks_color = (0, 255, 0)
+        highlight_textblocks_color = None  # (0, 255, 0)
         if highlight_textblocks_color is not None:
             for textblock_extent in coords['textblocks']:
                 canvas.rectangle(textblock_extent.scale(scale_x, scale_y).as_coords(),
@@ -543,7 +543,7 @@ class PreviewImage:
                                  outline=highlight_textblocks_color)
 
         # highlight page coords
-        canvas.rectangle(pagecoords.scale(scale_x, scale_y).pad(30).as_coords(), outline=(255, 0, 0))
+        # canvas.rectangle(pagecoords.scale(scale_x, scale_y).pad(30).as_coords(), outline=(255, 0, 0))
 
         # hihlight printspace
         # canvas.rectangle(printspace.scale(scale_x, scale_y).pad(20).as_coords(), outline=(0, 255, 255))
