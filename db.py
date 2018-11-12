@@ -4,7 +4,7 @@ from . import obfuscate_password_from_url
 from pythonmodules.profiling import timeit
 
 
-class ReflectDB:
+class DB:
     """
     Non-optimal sqlalchemy db helper object (using reflection to build ORM)
     """
@@ -23,14 +23,26 @@ class ReflectDB:
             self._db.connect()
 
         self._connected = True
-        with timeit('reflect db %s' % dburl, 1000):
-            self._meta = MetaData(bind=self._db)
-            self._meta.reflect()
 
     @property
     def db(self):
         self.connect()
         return self._db
+
+    def __repr__(self):
+        return '<%s:%s>' % (type(self), obfuscate_password_from_url(self._connection_url))
+
+    def execute(self, *args, **kwargs):
+        return self.db.execute(*args, **kwargs)
+
+
+class ReflectDB(DB):
+    def connect(self):
+        super().connect()
+
+        with timeit('reflect db %s' % dburl, 1000):
+            self._meta = MetaData(bind=self._db)
+            self._meta.reflect()
 
     @property
     def meta(self):
@@ -39,9 +51,3 @@ class ReflectDB:
 
     def __getattr__(self, item) -> Table:
         return self.meta.tables[item]
-
-    def __repr__(self):
-        return '<%s:%s>' % (type(self), obfuscate_password_from_url(self._connection_url))
-
-    def execute(self, *args, **kwargs):
-        return self.db.execute(*args, **kwargs)

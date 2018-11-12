@@ -25,6 +25,7 @@ from functools import partial
 from time import sleep
 from datetime import datetime
 import email.utils as rfc5322
+from .alto import Extent
 
 logger = logging.getLogger(__name__)
 
@@ -274,6 +275,8 @@ class MediaHaven:
 
     @staticmethod
     def get_alto_location(media_object_id, rights_owner):
+        if rights_owner is None:
+            return None
         return 'http://archief-media.viaa.be/viaa/MOB/%s/%s/%s.xml' % \
                (rights_owner.replace(' ', '').upper(), media_object_id, media_object_id)
 
@@ -313,7 +316,12 @@ class MediaHaven:
             pid = pid['externalId']
         else:
             data = self.one('+(externalId:%s)' % pid)
-        cp = data['mdProperties']['CP'][0]
+            if data is None:
+                logger.warning('Could not find externalId %s', pid)
+        cp = None
+        if 'mdProperties' in data and 'CP' in data['mdProperties']:
+            cp = data['mdProperties']['CP'][0]
+
         res = self.one('+(originalFileName:%s_alto.xml)' % pid)
 
         if res is None:
@@ -501,19 +509,27 @@ class PreviewImage:
         if im is None:
             im = self.image.copy()
         canvas = ImageDraw.Draw(im)
-        coords = self.get_alto().search_words(words, search_kind=search_kind)
+        alto = self.get_alto()
+        p = next(alto.pages())
+        coords = alto.search_words(words, search_kind=search_kind)
 
         (page_w, page_h) = coords['page_dimensions']
+        printspace = coords['printspace']
+        margins = coords['margins']
+        pagecoords = Extent(0, 0, page_w, page_h)
+
         (w, h) = im.size
         scale_x = w / page_w
         scale_y = h / page_h
 
-        logger.debug('Scaling, page: %dx%d vs img %dx%d => %3.2fx%3.2f', page_w, page_h, w, h, scale_x, scale_y)
+        logger.debug('Scaling, page: %dx%d vs img %dx%d => %3.2fx%3.2f',
+                     page_w, page_h, w, h, scale_x, scale_y)
 
         for word in coords['words']:
             rect = word['extent'].scale(scale_x, scale_y)
             canvas.rectangle(rect.as_coords(), outline=words_color)
 
+        highlight_textblocks_color = (0, 255, 0)
         if highlight_textblocks_color is not None:
             for textblock_extent in coords['textblocks']:
                 canvas.rectangle(textblock_extent.scale(scale_x, scale_y).as_coords(),
@@ -521,22 +537,18 @@ class PreviewImage:
 
         if coords['extent_textblocks']:
             if crop:
-                im = im.crop(coords['extent_textblocks'].scale(scale_x, scale_y).as_box())
+                im = im.crop(coords['extent_textblocks'].pad(-50).scale(scale_x, scale_y).pad(0, -150).as_box())
             elif highlight_textblocks_color is not None:
                 canvas.rectangle(coords['extent_textblocks'].scale(scale_x, scale_y).as_coords(),
                                  outline=highlight_textblocks_color)
 
-        pagepad = 30
-        # page_w = w
-        # page_h = h
-        page_w *= scale_x
-        page_h *= scale_y
-        page_w -= 2*pagepad
-        page_h -= 2*pagepad
-
         # highlight page coords
-        # pagecoords = [(pagepad, pagepad), (page_w, page_h)]
-        # canvas.rectangle(pagecoords, outline=(0, 255, 0))
+        canvas.rectangle(pagecoords.scale(scale_x, scale_y).pad(30).as_coords(), outline=(255, 0, 0))
+
+        # hihlight printspace
+        # canvas.rectangle(printspace.scale(scale_x, scale_y).pad(20).as_coords(), outline=(0, 255, 255))
+        # canvas.rectangle(margins.scale(scale_x, scale_y).pad(15).as_coords(), outline=(0, 255, 255))
+        # self.highlight_confidence(im)
         return im
 
 

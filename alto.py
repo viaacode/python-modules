@@ -3,6 +3,8 @@ import re
 from functools import partial
 from copy import copy
 import logging
+from .namenlijst import Conversions
+from collections import namedtuple
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +22,11 @@ class Alto:
         q = './/{%s}%s' % (self.xmlns, q)
         return self.xml.iterfind(q, *args, **kwargs)
 
-    def oa(self, q, k, *args, **kwargs):
-        return int(next(self.iterfind(q, *args, **kwargs)).attrib[k])
+    def oa(self, q, k, as_type=float, *args, **kwargs):
+        attrib = next(self.iterfind(q, *args, **kwargs)).attrib[k]
+        if as_type is not None:
+            attrib = as_type(attrib)
+        return attrib
 
     def _yield_types(self, type_name):
         return self.iterfind(type_name)
@@ -75,7 +80,7 @@ class AltoRoot(Alto):
         words = list(words)
 
         if search_kind is None:
-            search_kind = 'icontainsproximity'
+            search_kind = 'normalized'
         page = list(self.pages())
         if len(page) != 1:
             # logger.warning("Expected only 1 page, got %d", len(page))
@@ -107,23 +112,32 @@ class AltoRoot(Alto):
 
         pagedim = page.dimensions
 
-        # printspace = next(page.iterfind('PrintSpace')).attrib
-        # pagedim = (int(printspace['WIDTH']), int(printspace['HEIGHT']))
+        printspace = Extent(page.oa('PrintSpace', 'HPOS'),
+                            page.oa('PrintSpace', 'VPOS'),
+                            page.oa('PrintSpace', 'WIDTH'),
+                            page.oa('PrintSpace', 'HEIGHT'))
 
-        # pagedim[0] += int(page.one_attrib('TopMargin')['HPOS'])
-        # pagedim[1] += int(page.one_attrib('LeftMargin')['VPOS'])
+        margins = Extent(page.oa('LeftMargin', 'WIDTH'),
+                         page.oa('TopMargin', 'HEIGHT'),
+                         page.oa('RightMargin', 'WIDTH'),
+                         page.oa('BottomMargin', 'HEIGHT'))
+
+        # dirty hack correction for pages with wrong alto.xml coordinates
+        if printspace.w * 2 < pagedim[0]:
+            pagedim = list(map(lambda x: x // 2, pagedim))
+            correction_factor = 2
+        else:
+            correction_factor = 1
 
         return Words({
+            "correction_factor": correction_factor,
             "page_dimensions": pagedim,
             "words": results,
             "extent_words": words_extent,
             "extent_textblocks": textblocks_extent,
             "textblocks": textblocks,
-            "ext2": Extent(page.oa('LeftMargin', 'HPOS'),
-                           page.oa('TopMargin', 'VPOS'),
-                           page.oa('RightMargin', 'HPOS'),
-                           page.oa('BottomMargin', 'VPOS'))
-            # "words_topleft": (min_x, min_y),
+            "margins": margins,
+            'printspace': printspace,
         })
 
 
@@ -132,10 +146,13 @@ class AltoElement(Alto):
         super().__init__(xml, xmlns)
         self.xml = xml
         _ = xml.attrib
-        self.w = int(_['WIDTH'])
-        self.h = int(_['HEIGHT'])
+        self.w = float(_['WIDTH'])
+        self.h = float(_['HEIGHT'])
         self.id = _['ID']
         self.dimensions = (self.w, self.h)
+
+    def _asdict(self):
+        return self.__dict__
 
 
 class AltoPage(AltoElement):
@@ -151,36 +168,47 @@ class AltoTextBlock(AltoElement):
     def __init__(self, xml, xmlns):
         super().__init__(xml, xmlns)
         _ = xml.attrib
-        self.x = int(_['HPOS'])
-        self.y = int(_['VPOS'])
+        self.x = float(_['HPOS'])
+        self.y = float(_['VPOS'])
 
 
 class AltoWord(object):
+    fields = {
+        'text': 'CONTENT',
+        'x': 'HPOS',
+        'y': 'VPOS',
+        'w': 'WIDTH',
+        'h': 'HEIGHT',
+        'color': 'CC',
+        'confidence': 'WC',
+        'id': 'ID',
+        'meta': None
+    }
+
     def __init__(self, xml):
-        fields = {
-            'text': 'CONTENT',
-            'x': 'HPOS',
-            'y': 'VPOS',
-            'w': 'WIDTH',
-            'h': 'HEIGHT',
-            'color': 'CC',
-            'confidence': 'WC',
-            'id': 'ID',
-        }
+        # AltoWordFields = namedtuple('AltoWordFields', fields.keys())
 
         self.xml = xml
-        for k, attr in fields.items():
+
+        for k, attr in self.fields.items():
+            if attr is None:
+                continue
             v = None
             if attr in xml.attrib:
                 v = xml.attrib[attr]
             if len(k) == 1:
-                v = int(v)
+                v = float(v)
             setattr(self, k, v)
+
         if 'SUBS_CONTENT' in xml.attrib:
             self.full_text = xml.attrib['SUBS_CONTENT']
         else:
             self.full_text = self.text
+
         self.meta = None
+
+    def _asdict(self):
+        return {k: getattr(self, k) for k in self.fields.keys()}
 
     def __repr__(self):
         return '%s(%s)' % (type(self).__name__, self.__str__())
@@ -229,15 +257,14 @@ class SearchKinds:
         return result
 
     @staticmethod
-    def icontainsproximity(words, tocheck, proximity=2):
+    def normalized(words, tocheck):
         res = []
-        tocheck = list(map(str.lower, tocheck))
-        for idx, word in enumerate(words):
-            if any(c in word.full_text.lower() for c in tocheck):
-                # check proximity
-                context = [c.full_text.lower() for c in words[idx-proximity:idx+proximity+1]]
-                if all(any(tocheckword in c for c in context) for tocheckword in tocheck):
-                    res.append(word)
+        normalizer = Conversions.normalize_no_num
+        tocheck = list(map(normalizer, tocheck))
+        for idx in range(len(words) - len(tocheck)):
+            if all(normalizer(words[idx + nextcheckidx].full_text) == nextcheck
+                   for nextcheckidx, nextcheck in enumerate(tocheck)):
+                res.extend(words[idx:idx+len(tocheck)])
         return res
 
     @staticmethod
@@ -295,19 +322,38 @@ class Extent:
     def as_box(self):
         return self.x, self.y, self.x + self.w, self.y + self.h
 
+    def _asdict(self):
+        return copy(self.__dict__)
+
     def __str__(self):
         return str(self.__dict__)
 
     def __repr__(self):
         return '%s(%s)' % (type(self).__name__, self.__str__())
 
-    def scale(self, scale_x, scale_y, inplace=False):
+    def scale(self, scale_x, scale_y=None, inplace=False):
+        if scale_y is None:
+            scale_y = scale_x
+
         if not inplace:
-            return Extent(self.x * scale_x, self.y * scale_y, self.w * scale_x, self.h * scale_y)
+            return Extent(self.x * scale_x, self.y * scale_y,
+                          self.w * scale_x, self.h * scale_y)
         self.x *= scale_x
         self.y *= scale_y
         self.w *= scale_x
         self.h *= scale_y
+        return self
+
+    def pad(self, padding_x, padding_y=None, inplace=False):
+        if padding_y is None:
+            padding_y = padding_x
+        if not inplace:
+            return Extent(self.x + padding_x, self.y + padding_y,
+                          self.w - 2*padding_x, self.h - 2*padding_y)
+        self.x += padding_x
+        self.w -= 2*padding_x
+        self.y += padding_y
+        self.h -= 2*padding_y
         return self
 
     @staticmethod

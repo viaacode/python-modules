@@ -6,11 +6,10 @@ import http.client as http_client
 from urllib.parse import urlparse
 import datetime
 from .decorators import retry
+from .ner import normalize
 
 from collections import namedtuple, defaultdict
 from collections.abc import Mapping
-import re
-from unidecode import unidecode
 
 
 logger = logging.getLogger(__name__)
@@ -20,8 +19,9 @@ retry = retry(5, logger=logger, sleep=1)
 Names = namedtuple('Names', ['name', 'name_normalized', 'firstnames', 'lastnames', 'firstnames_normalized',
                              'lastnames_normalized', 'initials', 'variations', 'variations_normalized'])
 
-Person = namedtuple('Person', ['id', 'names', 'died_age', 'died_date', 'born_date', 'born_place', 'died_place',
-                               'events', 'gender', 'victim_type', 'victim_type_details', 'relations', 'description'])
+Person = namedtuple('Person', ['id', 'names', 'died_age', 'died_date', 'born_date', 'born_place',
+                               'died_place', 'events', 'gender', 'victim_type',
+                               'victim_type_details', 'relations', 'description', 'summary'])
 
 
 class Namenlijst:
@@ -92,29 +92,34 @@ class Namenlijst:
         person = next(person)
         person['names'] = Conversions.get_names(person)
 
+        died = Conversions.sort_date_to_date(person['sort_died_date'])
+        born = Conversions.sort_date_to_date(person['sort_born_date'])
         # fix died_age if missing
         if not person['died_age']:
-            died = Conversions.sort_date_to_date(person['sort_died_date'])
-            born = Conversions.sort_date_to_date(person['sort_born_date'])
             if born is None or died is None:
                 person['died_age'] = None
             else:
                 age = died.year - born.year
                 if died.month < born.month or (died.month == born.month and died.day < born.day):
                     age -= 1
-                person['died_age'] = died - born
+                person['died_age'] = age
 
         # add events
         person['events'] = self.findEvent(document={"person_id": nmlid}, options=['EXTEND_PLACE'])
         person['military'] = list(self.findMilitaryEntity(document={"person_id": nmlid}))
+
+        died_age = str(person['died_age']) if person['died_age'] else '?'
+        died_date = died if died else '?'
+
+        summary = '%s: died at age %s (%s)' % (person['names'].name, died_age, died_date)
 
         # only pass relevant data
         return Person(
             id=nmlid,
             names=person['names'],
             died_age=person['died_age'],
-            died_date=Conversions.get_date(person, 'died'),
-            born_date=Conversions.get_date(person, 'born'),
+            died_date=died,
+            born_date=born,
             events=Conversions.convert_events(person['events'], language),
             born_place=Conversions.convert_place(person['extend_born_place'], language),
             died_place=Conversions.convert_place(person['extend_died_place'], language),
@@ -122,14 +127,19 @@ class Namenlijst:
             victim_type=person['victim_type'],
             victim_type_details=person['victim_type_details'],
             relations=person['relations'],
-            description=person['description']
+            description=person['description'],
+            summary=summary
         )
 
 
 class Conversions:
     @staticmethod
     def normalize(txt):
-        return re.sub(r"\s+", " ", re.sub(r"[^a-z ]", '', unidecode(txt).lower())).strip()
+        return normalize(txt).strip()
+
+    @staticmethod
+    def normalize_no_num(txt):
+        return normalize(txt, regex="[^a-z ]").strip()
 
     @classmethod
     def convert_events(cls, events, language=None):
@@ -172,7 +182,7 @@ class Conversions:
         variations.extend('%s %s' % (lname, fname) for fname in firstnames for lname in lastnames)
         variations = set(variations)
 
-        if normalize is not None:
+        if normalize is not None and normalize is not False:
             firstnames_normalized = set(name for name in map(normalize, firstnames))
             lastnames_normalized = set(name for name in map(normalize, lastnames))
             name_normalized = normalize(name)
@@ -219,13 +229,21 @@ class Conversions:
         if any(type(value) is not int for value in values):
             return None
 
+        # I know below "fixes" aren't really clean, but hey, we work with the data we have...
         if values[1] > 12:
-            # I know this isn't really clean, but hey, we work with the data we have...
-            logger.warning('%s %s:%s: Month > 12, assume month and date are swapped for %d/%d/%d',
-                           row['person_id'], row['type'], key, *values)
-            values = (values[0], values[2], values[1])
+            logger.warning('%s %s:%s: Month > 12, assume month and date are swapped for %s',
+                           row['person_id'], row['type'], key, '/'.join(map(str, values)))
+            values = [values[0], values[2], values[1]]
 
-        return datetime.date(values[0], values[1], values[2])
+        try:
+            return datetime.date(*values)
+        except ValueError as e:
+            if str(e) == 'day is out of range for month':
+                logger.warning('%s for %s: will change day to 28', str(e), '/'.join(map(str, values)))
+                values[2] = 28
+            else:
+                return None
+            return datetime.date(*values)
 
     @staticmethod
     def sort_date_to_date(date: str):
@@ -246,7 +264,14 @@ class Conversions:
             day = int(day)
         except ValueError:
             day = 1
-        return datetime.date(year, month, day)
+
+        try:
+            return datetime.date(year, month, day)
+        except ValueError as e:
+            if str(e) == 'day is out of range for month':
+                logger.warning('%s for %s: will change day to 28', str(e), date)
+                day = 28
+            return datetime.date(year, month, day)
 
     @staticmethod
     def convert_place(data, language=None):
@@ -295,6 +320,11 @@ class LanguageData(Mapping):
         keys.extend(self.__data['languages'][self.language].keys())
         keys = set(keys)
         return (key for key in keys if key != 'languages')
+
+    def _asdict(self) -> dict:
+        d = {k: self[k] for k in self.keys()}
+        d['__language'] = self.language
+        return d
 
     def __contains__(self, item):
         return item in self.keys()

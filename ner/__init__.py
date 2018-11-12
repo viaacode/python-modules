@@ -1,6 +1,6 @@
 from pythonmodules.config import Config
 import importlib
-import unidecode
+from unidecode import unidecode
 import re
 import json
 import logging
@@ -60,8 +60,8 @@ def bio_to_entity_name(bio_tag):
         return 'O'
 
 
-def normalize(txt):
-    return re.sub(r"\s+", " ", re.sub(r"[^a-z ]", '', unidecode.unidecode(txt).lower()))
+def normalize(txt, regex="[^a-z0-9 ]"):
+    return re.sub(r"\s+", " ", re.sub(regex, '', unidecode(txt).lower()))
 
 
 class NERException(Exception):
