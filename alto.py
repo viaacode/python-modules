@@ -5,6 +5,7 @@ from copy import copy
 import logging
 from .namenlijst import Conversions
 from collections import namedtuple
+from itertools import chain
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +35,8 @@ class Alto:
     def textblocks(self):
         return (AltoTextBlock(block, self.xmlns) for block in self._yield_types('TextBlock'))
 
-    def words(self):
-        return (AltoWord(i) for i in self._yield_types('String'))
+    def words(self, parent='TextBlock'):
+        return (AltoWord(i, self) for i in self._yield_types('String'))
 
     @property
     def text(self):
@@ -95,21 +96,26 @@ class AltoRoot(Alto):
         for textblock in page.textblocks():
             textblock_extent = Extent.from_object(textblock)
             textblocks.append(textblock_extent)
-            rects = SearchKinds.multi_run(search_kind, list(textblock.words()), words)
 
-            for rect in rects:
-                word_extent = Extent.from_object(rect)
-                results.append({
-                    "extent": word_extent,
-                    "word": rect,
-                    'textblock': textblock,
-                    "extent_textblock": textblock_extent,
-                    # "orig_phrase": ' '.join(words)
-                })
-                words_extent = Extent.extend(word_extent, words_extent)
+        alto_words = list(chain.from_iterable(t.words() for t in page.textblocks()))
+        # logger.info(alto_words)
 
-            if len(rects):
-                textblocks_extent = Extent.extend(textblock_extent, textblocks_extent)
+        rects = SearchKinds.multi_run(search_kind, alto_words, words)
+
+        for rect in rects:
+            word_extent = Extent.from_object(rect)
+            textblock = rect.parent
+            textblock_extent = Extent.from_object(textblock)
+
+            results.append({
+                "extent": word_extent,
+                "word": rect,
+                'textblock': textblock,
+                "extent_textblock": textblock_extent,
+                # "orig_phrase": ' '.join(words)
+            })
+            words_extent = Extent.extend(word_extent, words_extent)
+            textblocks_extent = Extent.extend(textblocks_extent, textblock_extent)
 
         pagedim = page.dimensions
 
@@ -186,8 +192,9 @@ class AltoWord(object):
         'meta': None
     }
 
-    def __init__(self, xml):
+    def __init__(self, xml, parent):
         # AltoWordFields = namedtuple('AltoWordFields', fields.keys())
+        self._parent = parent
 
         self.xml = xml
 
@@ -207,6 +214,10 @@ class AltoWord(object):
             self.full_text = self.text
 
         self.meta = None
+
+    @property
+    def parent(self):
+        return self._parent
 
     def _asdict(self):
         return {k: getattr(self, k) for k in self.fields.keys()}
@@ -262,15 +273,25 @@ class SearchKinds:
         res = []
         normalizer = Conversions.normalize_no_num
         tocheck = list(map(normalizer, tocheck))
-        text = [(idx, normalizer(w.full_text)) for idx, w in enumerate(words) if len(normalizer(w.full_text))]
-        # logger.debug(text)
+        text = ((idx, normalizer(w.full_text)) for idx, w in enumerate(words) if len(normalizer(w.full_text)))
+
+        def remove_dups(a_list):
+            l = []
+            duplicate = None
+            for item in a_list:
+                if duplicate != item[1]:
+                    duplicate = item[1]
+                    l.append(item)
+            return l
+        text = remove_dups(text)
+
         l = len(tocheck)
 
         for idx in range(len(text)-l+1):
             # logger.info('Compare %d:%d %s to %s', idx, idx+l,
             #             ' '.join(tocheck), ' '.join(t[1] for t in text[idx:idx+l]))
-            if all(text[idx + nextcheckidx][1] == nextcheck for nextcheckidx, nextcheck in enumerate(tocheck)):
-                # logger.warning('FOUND %d %s', idx, [w.full_text for w in words])
+            if all(nextcheck == text[idx + nextcheckidx][1] for nextcheckidx, nextcheck in enumerate(tocheck)):
+                # logger.warning('FOUND %d %s', idx, [w.full_text for w in words[text[idx][0]:text[idx+l-1][0]+1]])
                 res.extend(words[text[idx][0]:text[idx+l-1][0]+1])
         return res
 
