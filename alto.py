@@ -42,10 +42,10 @@ class Alto:
     def text(self):
         words = []
         prev_word = None
-        for idx, w in enumerate(word.full_text for word in self.words()):
-            if prev_word == w:
-                continue
-            words.append(w)
+        for w in self.words():
+            if prev_word is not None and prev_word.full_text == w.full_text and w.orig_hyphenated:
+                words.pop()
+            words.append(w.full_text)
             prev_word = w
         return ' '.join(words)
 
@@ -189,6 +189,7 @@ class AltoWord(object):
         'color': 'CC',
         'confidence': 'WC',
         'id': 'ID',
+        'orig_hyphenated': None,
         'meta': None
     }
 
@@ -208,7 +209,8 @@ class AltoWord(object):
                 v = float(v)
             setattr(self, k, v)
 
-        if 'SUBS_CONTENT' in xml.attrib:
+        self.orig_hyphenated = 'SUBS_CONTENT' in xml.attrib
+        if self.orig_hyphenated:
             self.full_text = xml.attrib['SUBS_CONTENT']
         else:
             self.full_text = self.text
@@ -273,14 +275,14 @@ class SearchKinds:
         res = []
         normalizer = Conversions.normalize_no_num
         tocheck = list(map(normalizer, tocheck))
-        text = ((idx, normalizer(w.full_text)) for idx, w in enumerate(words) if len(normalizer(w.full_text)))
+        text = ((idx, normalizer(w.full_text), w.orig_hyphenated) for idx, w in enumerate(words) if len(normalizer(w.full_text)))
 
         def remove_dups(a_list):
             l = []
-            duplicate = None
+            duplicate = (0, 0, False)
             for item in a_list:
-                if duplicate != item[1]:
-                    duplicate = item[1]
+                if not duplicate[2] or duplicate[1] != item[1]:
+                    duplicate = item
                     l.append(item)
             return l
         text = remove_dups(text)
