@@ -279,11 +279,12 @@ class SearchKinds:
 
         def remove_dups(a_list):
             l = []
-            duplicate = (0, 0, False)
+            prev = (0, 0, False)
             for item in a_list:
-                if not duplicate[2] or duplicate[1] != item[1]:
-                    duplicate = item
-                    l.append(item)
+                if prev[2] and prev[1] == item[1]:
+                    l.pop()
+                prev = item
+                l.append(item)
             return l
         text = remove_dups(text)
 
