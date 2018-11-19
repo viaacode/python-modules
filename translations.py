@@ -4,8 +4,8 @@ from functools import partial
 import logging
 import csv
 import os
+import sys
 from .config import Config
-import io
 
 
 logger = logging.getLogger(__name__)
@@ -103,3 +103,9 @@ class Translator:
         except Exception as e:
             logger.error(e)
             return []
+
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.DEBUG)
+    logger.setLevel(logging.DEBUG)
+    print(translate(*sys.argv[1:]))

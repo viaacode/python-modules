@@ -279,8 +279,17 @@ class SearchKinds:
 
         def remove_dups(a_list):
             l = []
-            prev = (0, 0, False)
+            prev = (0, '', False)
+            deb = 0
             for item in a_list:
+                # if item[1] == 'paul':
+                #     deb = 5
+                #
+                # if deb > 0:
+                #     deb -= 1
+                #     logger.info('%s', item)
+                if len(item[1]) == 0:
+                    continue
                 if prev[2] and prev[1] == item[1]:
                     l.pop()
                 prev = item
