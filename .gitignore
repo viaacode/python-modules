@@ -102,3 +102,5 @@ ENV/
 
 # mac
 .DS_Store
+
+subtitles/
