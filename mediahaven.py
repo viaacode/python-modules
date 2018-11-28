@@ -75,7 +75,8 @@ def too_many_req_decorator(sleeptime=1):
                         secs = None
 
                     logger.info('App suggested sleeping for %s secs', str(secs))
-                    # todo: replace sleeptime with suggested retry-after value? (3600 seems default, we really wanna wait an hour?)
+                    # todo: replace sleeptime with suggested retry-after value?
+                    #       (3600 seems default, we really wanna wait an hour?)
 
                 sleep(sleeptime)
                 r = func(*args, **kwargs)
@@ -175,11 +176,16 @@ class MediaHaven:
 
     def _validate_response(self, r):
         if r.status_code == 401:
-            raise MediaHavenException('User "%s" not authorized, code %d: %s' % (self.url.username, r.status_code, r.text))
+            raise MediaHavenException('User "%s" not authorized, code %d: %s' %
+                                      (self.url.username, r.status_code, r.text))
 
         if r.status_code < 200 or r.status_code >= 300:
             # logger.warning("Wrong status code %d: %s ", r.status_code, r.text)
-            raise MediaHavenException("Wrong status code %d: %s " % (r.status_code, r.text))
+            raise MediaHavenException("Wrong status code %d (for user '%s'): \n%s\n\n%s" %
+                                      (r.status_code,
+                                       self.url.username,
+                                       "\n".join("%s: %s" % (k, v) for k, v in r.headers.items()),
+                                       r.text))
 
     def call_absolute(self, url, params=None, method=None, raw_response=False):
         if method is None:
@@ -529,7 +535,7 @@ class PreviewImage:
             rect = word['extent'].scale(scale_x, scale_y)
             canvas.rectangle(rect.as_coords(), outline=words_color)
 
-        highlight_textblocks_color = None  # (0, 255, 0)
+        highlight_textblocks_color = (0, 255, 0)
         if highlight_textblocks_color is not None:
             for textblock_extent in coords['textblocks']:
                 canvas.rectangle(textblock_extent.scale(scale_x, scale_y).as_coords(),

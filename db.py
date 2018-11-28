@@ -5,21 +5,18 @@ from pythonmodules.profiling import timeit
 
 
 class DB:
-    """
-    Non-optimal sqlalchemy db helper object (using reflection to build ORM)
-    """
     def __init__(self, connection_url):
         self._db = None
         self._meta = None
         self._connected = False
         self._connection_url = connection_url
+        self._debug_connection_url = obfuscate_password_from_url(self._connection_url)
 
     def connect(self):
         if self._connected:
             return
         self._db = create_engine(self._connection_url)
-        dburl = obfuscate_password_from_url(self._connection_url)
-        with timeit('connect db %s' % dburl, 1000):
+        with timeit('connect db %s' % self._debug_connection_url, 1000):
             self._db.connect()
 
         self._connected = True
@@ -37,10 +34,13 @@ class DB:
 
 
 class ReflectDB(DB):
+    """
+    Non-optimal sqlalchemy db helper object (using reflection to build ORM)
+    """
     def connect(self):
         super().connect()
 
-        with timeit('reflect db %s' % dburl, 1000):
+        with timeit('reflect db %s' % self._debug_connection_url, 1000):
             self._meta = MetaData(bind=self._db)
             self._meta.reflect()
 

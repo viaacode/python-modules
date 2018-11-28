@@ -277,6 +277,9 @@ class SearchKinds:
         tocheck = list(map(normalizer, tocheck))
         text = ((idx, normalizer(w.full_text), w.orig_hyphenated) for idx, w in enumerate(words) if len(normalizer(w.full_text)))
 
+        # todo: make sure that both are included, now if dupe word, only all added if it is right side, not left side:
+        # eg. correct: mike de de smet
+        #   incorrect: Eugene Eugene Deloge
         def remove_dups(a_list):
             l = []
             prev = (0, '', False)
