@@ -257,7 +257,7 @@ class MediaHaven:
         log_level = logging.DEBUG if enabled else logging.WARNING
 
         # logging.basicConfig()
-        logging.getLogger().setLevel(log_level)
+        # logging.getLogger().setLevel(log_level)
         requests_log = logging.getLogger("requests.packages.urllib3")
         requests_log.setLevel(log_level)
         # requests_log.propagate = enabled

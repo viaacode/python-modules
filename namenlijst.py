@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 import datetime
 from .decorators import retry
 from .ner import normalize
-
+import re
 from collections import namedtuple, defaultdict
 from collections.abc import Mapping
 
@@ -133,6 +133,8 @@ class Namenlijst:
 
 
 class Conversions:
+    _replacements = None
+
     @staticmethod
     def normalize(txt):
         return normalize(txt).strip()
@@ -156,8 +158,31 @@ class Conversions:
             result[row['type']] = row
         return result
 
-    @staticmethod
-    def get_names(row, filter_=None, normalize=True):
+    @classmethod
+    def names_replacements(cls):
+        if cls._replacements is None:
+            replacements = []
+
+            def add(a, b):
+                replacements.append((a, b))
+                replacements.append((b, a))
+
+            add('vam de', 'van de')
+            add('vande', 'van de')
+            add('vande ', 'vande')
+            cls._replacements = replacements
+        return cls._replacements
+
+    @classmethod
+    def add_replacements(cls, names):
+        replacements = cls.names_replacements()
+        for i in range(2):
+            for search, replace in replacements:
+                names.update([name.replace(search, replace) for name in names])
+        return names
+
+    @classmethod
+    def get_names(cls, row, filter_=None, normalize=True):
         if normalize is True:
             normalize = Conversions.normalize
         name = '%s %s' % (row['surname'], row['familyname'])
@@ -178,15 +203,20 @@ class Conversions:
         firstnames = set(firstnames)
         lastnames = set(lastnames)
 
-        variations = list('%s %s' % (fname, lname) for fname in firstnames for lname in lastnames)
-        variations.extend('%s %s' % (lname, fname) for fname in firstnames for lname in lastnames)
-        variations = set(variations)
+        variations = set('%s %s' % (fname, lname) for fname in firstnames for lname in lastnames)
+        variations.update(['%s %s' % (lname, fname) for fname in firstnames for lname in lastnames])
 
         if normalize is not None and normalize is not False:
-            firstnames_normalized = set(name for name in map(normalize, firstnames))
-            lastnames_normalized = set(name for name in map(normalize, lastnames))
+            firstnames_normalized = set(name for name in filter(filter_, map(normalize, firstnames)))
+            cls.add_replacements(firstnames_normalized)
+            lastnames_normalized = set(name for name in filter(filter_, map(normalize, lastnames)))
+            cls.add_replacements(lastnames_normalized)
             name_normalized = normalize(name)
-            variations_normalized = set(map(normalize, variations))
+
+            variations_normalized = set('%s %s' % (fname, lname) for fname in firstnames_normalized for lname in lastnames_normalized)
+            variations_normalized.update(['%s %s' % (lname, fname) for fname in firstnames_normalized for lname in lastnames_normalized])
+
+            cls.add_replacements(variations_normalized)
         else:
             firstnames_normalized = firstnames
             lastnames_normalized = lastnames
