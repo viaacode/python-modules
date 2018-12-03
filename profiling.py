@@ -22,6 +22,11 @@ class timeit:
     logger.setLevel(logging.INFO)
 
     def __init__(self, text=None, min_time=None, callback=None):
+        """
+        :param text: str
+        :param min_time: int Minimum duration to start reporting in milliseconds
+        :param callback: callable
+        """
         self.text = text
         self.min_time = min_time
         self.start = time.monotonic()

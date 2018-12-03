@@ -371,5 +371,5 @@ class __ExtraTests:
 if __name__ == "__main__":
     import doctest
     from time import sleep
-    doctest.testmod()
+    doctest.testmod(verbose=True)
 
