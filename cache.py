@@ -34,22 +34,20 @@ class WrapperCacher:
     """
     def __init__(self, obj,  timeout=None, version=None):
         self.obj = obj
-        self.extra_write_arguments = []
+        self.extra_write_arguments = {}
         if timeout is not None:
-            self.extra_write_arguments.append(timeout)
+            self.extra_write_arguments['timeout'] = timeout
         if version is not None:
-            self.extra_write_arguments.append(version)
+            self.extra_write_arguments['version'] = version
 
     def __setitem__(self, k, v):
-        args = [k, v]
-        args.extend(self.extra_write_arguments)
-        return self.obj.set(*args)
+        return self.obj.set(k, v, **self.extra_write_arguments)
 
     def __getitem__(self, k):
         return self.obj.get(k)
 
     def __contains__(self, k):
-        return self.obj.has_key(k)
+        return k in self.obj
 
 
 class LocalCacher:

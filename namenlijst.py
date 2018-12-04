@@ -147,6 +147,8 @@ class Conversions:
     def convert_events(cls, events, language=None):
         result = defaultdict(None)
         for row in events:
+            if row['type'] == 'memorated':
+                row['type'] = 'memorated.%s' % row['memorial_kind']
             row = cls.convert_dates(row, ['start', 'end'])
             row['place'] = None
             if 'extend_place' in row:
