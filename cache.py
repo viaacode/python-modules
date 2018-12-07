@@ -1,5 +1,10 @@
 import collections
 import logging
+import os
+import hashlib
+import zlib
+import pickle
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +120,222 @@ class DummyCacher:
     @staticmethod
     def __contains__(k):
         return False
+
+
+class FileCacher:
+    suffix = '.cache'
+
+    def __init__(self, dir, timeout=None, hasher=None):
+        self._dir = os.path.abspath(dir)
+        self._timeout = timeout
+        self._createdir()
+        if hasher is False:
+            hasher = type(self)._reflect_hasher_func
+        if hasher is None:
+            hasher = type(self)._default_hasher_func
+
+        self._hasher = hasher
+
+        self._compress = zlib.compress
+        self._decompress = self._zlib_decompress
+
+        # self._compress = self._reflect_hasher_func
+        # self._decompress = self._reflect_hasher_func
+
+    @staticmethod
+    def _zlib_decompress(data):
+        try:
+            return zlib.decompress(data)
+        except zlib.error:
+            return None
+
+    def _createdir(self):
+        if os.path.exists(self._dir):
+            return
+        try:
+            os.makedirs(self._dir, 0o700)
+        except FileExistsError:
+            pass
+
+    @staticmethod
+    def _reflect_hasher_func(k):
+        return k
+
+    @staticmethod
+    def _default_hasher_func(k):
+        if type(k) is not bytes:
+            k = bytes(k, encoding='utf-8')
+        return hashlib.md5(k).hexdigest()
+
+    def _filename(self, k):
+        return os.path.join(self._dir, self._hasher(k) + type(self).suffix)
+
+    def __setitem__(self, k, v):
+        filename = self._filename(k)
+
+        with open(filename, 'wb') as f:
+            to_write = pickle.dumps(v, pickle.HIGHEST_PROTOCOL)
+            to_write = self._compress(to_write)
+            f.write(to_write)
+
+    def __getitem__(self, k):
+        filename = self._filename(k)
+        err = KeyError(k)
+
+        try:
+            age = time.time() - os.path.getmtime(filename)
+        except FileNotFoundError:
+            raise err
+
+        if self._timeout is not None and age > self._timeout:
+            os.remove(filename)
+            raise err
+
+        to_return = KeyError(k)
+        with open(filename, 'rb') as f:
+            to_return = f.read()
+            to_return = self._decompress(to_return)
+            if to_return is not None:
+                to_return = pickle.loads(to_return)
+
+        if to_return is None:
+            os.remove(filename)
+            raise err
+
+        if type(to_return) is KeyError:
+            raise err
+
+        return to_return
+
+    def __contains__(self, k):
+        try:
+            self.__getitem__(k)
+            return True
+        except KeyError:
+            return False
+
+
+class CacheProxy:
+    def __init__(self, cacher):
+        self.cacher = cacher
+
+    def __getitem__(self, key):
+        return self.cacher.__getitem__(key)
+
+    def __setitem__(self, key, value):
+        return self.cacher.__setitem__(key, value)
+
+    def __contains__(self, item):
+        return self.cacher.__contains__(item)
+
+
+class CacheLocker(CacheProxy):
+    def __init__(self, cacher):
+        super().__init__(cacher)
+        self.cur_get = set()
+        self.cur_set = set()
+        self.max_wait = 500
+
+    def __getitem__(self, k):
+        i = 0
+        while (k in self.cur_get or k in self.cur_set) and i < self.max_wait:
+            time.sleep(0.01)
+            if i == 10:
+                logger.info('Long sleep for %s', k)
+            i += 1
+
+        if i > 10:
+            logger.warning('get %s slept for %dms', k, i * 10)
+
+        try:
+            self.cur_get.add(k)
+            result = super().__getitem__(k)
+        except KeyError as e:
+            self.cur_get.remove(k)
+            raise e
+        except Exception as e:
+            logger.error(e)
+            self.cur_get.remove(k)
+            raise KeyError(k)
+            # raise e
+
+        self.cur_get.remove(k)
+        return result
+
+    def __setitem__(self, k, v):
+        i = 0
+        while (k in self.cur_set) and i < self.max_wait:
+            time.sleep(0.01)
+            if i == 10:
+                logger.info('Long sleep for %s', k)
+            i += 1
+
+        if i > 10:
+            logger.warning('set %s slept for %dms', k, i * 10)
+
+        self.cur_set.add(k)
+        try:
+            super().__setitem__(k, v)
+        except Exception as e:
+            # logger.error(e)
+            raise KeyError(k)
+
+        try:
+            self.cur_set.remove(k)
+        except KeyError:
+            pass
+
+
+class CacheAggregate:
+    def __init__(self, cachers):
+        self.cachers = cachers
+
+    def __contains__(self, k):
+        return any(k in cacher for cacher in self.cachers)
+
+    def __getitem__(self, k):
+        cachers_done = []
+        for cacher in self.cachers:
+            try:
+                res = cacher[k]
+
+                # temp fix to not need to bump cache, accidentally wrote some KeyErrors to cache
+                if type(res) is KeyError:
+                    raise res
+
+                logger.debug('GET FROM %s: %s', type(cacher), k)
+
+                # we got a result, write result to previous cachers as well
+                for to_migrate_cache in cachers_done:
+                    to_migrate_cache[k] = res
+
+                return res
+            except KeyError:
+                cachers_done.append(cacher)
+                pass
+
+        raise KeyError(k)
+
+    def __setitem__(self, k, v):
+        for cacher in self.cachers:
+            try:
+                cacher[k] = v
+            except Exception as e:
+                logger.warning("cacheaggregator set exception %s", e)
+
+
+class OptimizedFileCacher(CacheProxy):
+    def __init__(self, dir, max_local_items=None, *args, **kwargs):
+        if max_local_items is None:
+            max_local_items = 5
+
+        cacher = CacheAggregate([
+            LocalCacher(max_local_items),
+            FileCacher(dir=dir, *args, **kwargs)
+        ])
+        cacher = CacheLocker(cacher)
+
+        super().__init__(cacher)
 
 
 if __name__ == '__main__':

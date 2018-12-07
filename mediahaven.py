@@ -16,7 +16,7 @@ import time
 from . import alto
 from .config import Config
 from . import decorators
-from .cache import DummyCacher
+from .cache import OptimizedFileCacher
 from PIL import Image, ImageDraw
 from io import BytesIO
 from .oai import OAI
@@ -124,6 +124,7 @@ req = MediaHavenRequest()
 
 class MediaHaven:
     classcacheVersionNumber = 1
+    __cache = OptimizedFileCacher('/export/caches/mediahaven')
 
     def __init__(self, config=None, **kwargs):
         self.config = Config(config, 'mediahaven')
@@ -141,9 +142,8 @@ class MediaHaven:
         if not _.is_false('timeout'):
             self.timeout = int(_['timeout'])
 
-        self.__cache = DummyCacher()
-        if 'cache' in _:
-            self.__cache = _['cache']
+        # if 'cache' in _:
+        #     self.__cache = _['cache']
 
         if not self.config.is_false('debug'):
             logger.setLevel(logging.DEBUG)
@@ -151,10 +151,6 @@ class MediaHaven:
 
     def get_cacher(self):
         return self.__cache
-
-    def set_cacher(self, cache):
-        self.__cache = cache
-        return self
 
     def oai(self):
         _ = self.config

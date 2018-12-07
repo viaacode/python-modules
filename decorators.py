@@ -142,9 +142,11 @@ def classcache(f):
             x = '%s|v:%d' % (x, obj.__class__.classcacheVersionNumber)
             _log('version keyed: %s' % x)
 
-        if x in cacher:
+        try:
             _log('%s.%s:%s got: %s' % (obj.__class__.__name__, f.__name__, classcache.__name__, str(x)))
             return cacher[x]
+        except KeyError:
+            pass
 
         res = f(*args, **kwargs)
         _log('%s.%s:%s set: %s' % (obj.__class__.__name__, f.__name__, classcache.__name__, str(x)))

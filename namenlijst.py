@@ -5,9 +5,9 @@ import logging
 import http.client as http_client
 from urllib.parse import urlparse
 import datetime
-from .decorators import retry
+from .decorators import retry, classcache
+from .cache import OptimizedFileCacher
 from .ner import normalize
-import re
 from collections import namedtuple, defaultdict
 from collections.abc import Mapping
 
@@ -28,6 +28,7 @@ class Namenlijst:
     __jsonrpc = None
     __config = None
     __token = None
+    __cache = OptimizedFileCacher('/export/caches/nml', hasher=False)
 
     def __init__(self, config=None, log_http_requests=None):
         self.__config = Config(config, 'namenlijst')
@@ -51,6 +52,9 @@ class Namenlijst:
     # def findPersonAdvanced(query = None):
     # todo
 
+    def get_cacher(self):
+        return type(self).__cache
+
     @retry
     def refresh_token(self):
         self.__token = self.__jsonrpc.authenticate(account=self._user, password=self._passwd)
@@ -73,7 +77,8 @@ class Namenlijst:
         if self.__token is None:
             self.refresh_token()
         return Method(self, self.__jsonrpc, self.__token, method_name)
-    
+
+    @classcache
     def get_person_full(self, nmlid: str, language: str=None) -> Person:
         """
         Get all info about an nmlid, adds events, etc.
@@ -307,7 +312,7 @@ class Conversions:
 
     @staticmethod
     def convert_place(data, language=None):
-        return LanguageData(data, language)
+        return LanguageData(data, language)._asdict()
 
 
 LanguageDataNone = defaultdict(None)
