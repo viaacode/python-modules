@@ -210,6 +210,10 @@ class Conversions:
         firstnames = set(firstnames)
         lastnames = set(lastnames)
 
+        # add only the "first word" firstname
+        for name in list(firstnames):
+            firstnames.add(name.split(' ', 2)[0])
+
         variations = set('%s %s' % (fname, lname) for fname in firstnames for lname in lastnames)
         variations.update(['%s %s' % (lname, fname) for fname in firstnames for lname in lastnames])
 

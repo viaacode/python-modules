@@ -125,7 +125,7 @@ class DummyCacher:
 class FileCacher:
     suffix = '.cache'
 
-    def __init__(self, dir, timeout=None, hasher=None):
+    def __init__(self, dir, timeout=None, hasher=None, version=None):
         self._dir = os.path.abspath(dir)
         self._timeout = timeout
         self._createdir()
@@ -135,6 +135,7 @@ class FileCacher:
             hasher = type(self)._default_hasher_func
 
         self._hasher = hasher
+        self._version = version
 
         self._compress = zlib.compress
         self._decompress = self._zlib_decompress
@@ -168,7 +169,12 @@ class FileCacher:
         return hashlib.md5(k).hexdigest()
 
     def _filename(self, k):
-        return os.path.join(self._dir, self._hasher(k) + type(self).suffix)
+        if self._version is not None:
+            filename = 'v%d_' % (self._version,)
+        else:
+            filename = ''
+        filename += '%s%s' % (self._hasher(k), type(self).suffix)
+        return os.path.join(self._dir, filename)
 
     def __setitem__(self, k, v):
         filename = self._filename(k)
