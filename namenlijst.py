@@ -312,7 +312,11 @@ class Conversions:
             if str(e) == 'day is out of range for month':
                 logger.warning('%s for %s: will change day to 28', str(e), date)
                 day = 28
+        try:
             return datetime.date(year, month, day)
+        except ValueError as e:
+            logger.warning("No valid date found for %s", date)
+        return None
 
     @staticmethod
     def convert_place(data, language=None):

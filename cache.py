@@ -299,13 +299,13 @@ class CacheAggregate:
         cachers_done = []
         for cacher in self.cachers:
             try:
+                start_time = time.monotonic()
                 res = cacher[k]
-
                 # temp fix to not need to bump cache, accidentally wrote some KeyErrors to cache
                 if type(res) is KeyError:
                     raise res
 
-                logger.debug('GET FROM %s: %s', type(cacher), k)
+                logger.debug('GET FROM %s: %s %.4fs', type(cacher), k, time.monotonic() - start_time)
 
                 # we got a result, write result to previous cachers as well
                 for to_migrate_cache in cachers_done:
