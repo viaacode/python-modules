@@ -197,19 +197,15 @@ class FileCacher:
             os.remove(filename)
             raise err
 
-        to_return = KeyError(k)
         with open(filename, 'rb') as f:
             to_return = f.read()
             to_return = self._decompress(to_return)
-            if to_return is not None:
-                to_return = pickle.loads(to_return)
 
-        if to_return is None:
-            os.remove(filename)
-            raise err
+            if to_return is None:
+                os.remove(filename)
+                raise err
 
-        if type(to_return) is KeyError:
-            raise err
+            to_return = pickle.loads(to_return)
 
         return to_return
 
