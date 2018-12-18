@@ -285,18 +285,20 @@ class SearchKinds:
             prev = (0, '', False)
             deb = 0
             for item in a_list:
-                # if item[1] == 'paul':
+                # if item[1] == 'georges louis':
                 #     deb = 5
-                #
-                # if deb > 0:
-                #     deb -= 1
-                #     logger.info('%s', item)
-                if len(item[1]) == 0:
-                    continue
-                if prev[2] and prev[1] == item[1]:
-                    l.pop()
-                prev = item
-                l.append(item)
+                for part_item in item[1].split(' '):
+                    if len(item[1]) == 0:
+                        continue
+
+                    if prev[2] and prev[1] == item[1]:
+                        l.pop()
+                    prev = (item[0], part_item, item[2])
+
+                    # if deb > 0:
+                    #     deb -= 1
+                    #     logger.info('%s', prev)
+                    l.append(prev)
             return l
         text = remove_dups(text)
 
