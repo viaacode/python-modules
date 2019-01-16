@@ -28,7 +28,7 @@ class Namenlijst:
     __jsonrpc = None
     __config = None
     __token = None
-    __cache = OptimizedFileCacher('/export/caches/nml', hasher=False)
+    __cache = OptimizedFileCacher('/export/caches/nml', hasher=False, version=2)
 
     def __init__(self, config=None, log_http_requests=None):
         self.__config = Config(config, 'namenlijst')
@@ -211,8 +211,8 @@ class Conversions:
         lastnames = set(lastnames)
 
         # add only the "first word" firstname
-        for name in list(firstnames):
-            firstnames.add(name.split(' ', 2)[0])
+        for fname in list(firstnames):
+            firstnames.add(fname.split(' ', 2)[0])
 
         variations = set('%s %s' % (fname, lname) for fname in firstnames for lname in lastnames)
         variations.update(['%s %s' % (lname, fname) for fname in firstnames for lname in lastnames])
